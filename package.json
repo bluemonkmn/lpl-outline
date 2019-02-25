@@ -2,12 +2,13 @@
 	"name": "lpl-outline",
 	"displayName": "LPL Outline",
 	"description": "Provide the infromation necessary for LPL code to show nodes in the Outline tree.",
-	"version": "0.1.0",
+	"version": "0.0.3",
 	"author": {
 		"email": "ben.marty@infor.com",
 		"name": "Benjamin Marty",
 		"url": "https://github.com/bluemonkmn/"
 	},
+	"publisher": "bluemonkmn",
 	"engines": {
 		"vscode": "^1.31.0"
 	},

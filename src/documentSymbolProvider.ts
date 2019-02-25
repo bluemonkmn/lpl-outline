@@ -8,9 +8,27 @@ enum LPLBlock {
     DerivedFields,
     Relations,
     Actions,
+    TransientFields,
+    LocalFields,
+    RuleBlocks,
     OtherSection,
     Action,
-    Condition
+    Condition,
+    DerivedField,
+    Relation,
+    Field,
+    RuleBlock,
+    ActionParameters,
+    ActionLocalFields,
+    ActionParameterRules,
+    ActionLocalFieldRules,
+    ActionRuleBlocks,
+    ActionOtherSection,
+    ActionParameter,
+    ActionLocalField,
+    ActionParameterRule,
+    ActionLocalFieldRule,
+    ActionRuleBlock
 }
 
 class IndentInfo {
@@ -26,6 +44,9 @@ class IndentInfo {
 }
 
 export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbolProvider {
+    
+    includeActionDetail: Boolean = vscode.workspace.getConfiguration("lpl-outline").detail === "deep";
+
     public provideDocumentSymbols(
         document: vscode.TextDocument,    
         token: vscode.CancellationToken): vscode.SymbolInformation[]
@@ -33,18 +54,25 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
         let result: vscode.SymbolInformation[] = [];
         let classNamePattern = /^\s*(\w+)\s+is\s+a\s+BusinessClass\s*$/;
         let className: string = '';
-        let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions)\s*(\/\/[^\n]*)?$/;
+        let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions|Field Rules|Local Fields|Transient Fields|Field Groups|Rule Blocks)\s*(\/\/[^\n]*)?$/;
+        let actionHeadingPattern = /^(\s+)(Queue Mapping Fields|Set Is|Parameters|Parameter Rules|Local Fields|Results|Field Rules|SubType|Accumulators|Instance Selection|Sort Order(\s+is\s+\w+)|Action Rules|Entrance Rules|Exit Rules|InitiateRequest Rules|UpdateRequest Rules|CancelRequest Rules|Rollback Rules|Rule Blocks)\s*(\/\/[^\n]*)?$/;
         let comment =  /^\s*\/\/[^\n]*$/;
+        let preprocessor = /^\#[^\n]*$/;
         let actionPattern = /^\s+(\w+)\s+is\s+(a|an)\s+((\w+)\s+)?(Request)?Action\s*(\/\/[^\n]*)?$/;
-        let fieldPattern = /^\s+(\w+)\s+is\s+((a|an|like)\s+)?(\w+)((\s+size)?\s+\d+)?\s*(\/\/[^\n]*)?$/;
-        let conditionPattern = /^\s+(\w+)\s*(\/\/[^\n]*)?$/;
+        let derivedPattern = /^\s+(\w+)\s+is\s+(a|an)\s+((\w+)\s+)?(aggregation\s+of\s(\w+)|ConditionalField|ComputeField|InstanceCount|StringField|MessageField|LabelField|DerivedField|NativeField)\s*(\/\/[^\n]*)?$/;
+        let relationPattern = /^\s+(\w+)(\s+(is\s+(a|an)\s+)?(\w+)\s+set)?\s*(\/\/[^\n]*)?$/;
+        let fieldPattern = /^\s+(\w+)(\s+is\s+((a|an|like)\s+)?(\w+(\s+view)?|BusinessObjectReference\s+to\s+(\w+)|Unsigned\s+(Decimal|Percent)|EmailAddressField\s+with\s+multiple\s+addresses|Iteration\s+of\s+(\w+))((\s+size(\s+fixed|\s+up\s+to)?)?\s+\d+(\.\d+)?|(\s+group|\s+compute)(\s+in subject \w+)?)?)?\s*(\/\/[^\n]*)?$/;
+        let simpleNamePattern = /^\s+(\w+)\s*(\/\/[^\n]*)?$/;
         let match: RegExpExecArray | null;
         let currentBlock: IndentInfo = new IndentInfo(0, LPLBlock.ClassRoot);
         let indentInfo: IndentInfo[] = [];
 
+        // Refresh includeActionDetail from settings
+        this.includeActionDetail = vscode.workspace.getConfiguration("lpl-outline").detail === "deep";
+
         for (let lineNum=0; lineNum < document.lineCount; lineNum++) {
             let line = document.lineAt(lineNum);
-            if (comment.test(line.text) || line.isEmptyOrWhitespace) {
+            if (comment.test(line.text) || line.isEmptyOrWhitespace || preprocessor.test(line.text)) {
                 continue;
             }
             let indent = this.getColumn(line.text, line.firstNonWhitespaceCharacterIndex);
@@ -85,6 +113,16 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                     currentBlock = new IndentInfo(indent, LPLBlock.Conditions);
                                 } else if (match[2] === "Actions") {
                                     currentBlock = new IndentInfo(indent, LPLBlock.Actions);
+                                } else if (match[2] === "Derived Fields") {
+                                    currentBlock = new IndentInfo(indent, LPLBlock.DerivedFields);
+                                } else if (match[2] === "Relations") {
+                                    currentBlock = new IndentInfo(indent, LPLBlock.Relations);
+                                } else if (match[2] === "Transient Fields") {
+                                    currentBlock = new IndentInfo(indent, LPLBlock.TransientFields);
+                                } else if (match[2] === "Local Fields") {
+                                    currentBlock = new IndentInfo(indent, LPLBlock.LocalFields);
+                                } else if (match[2] === "Rule Blocks") {
+                                    currentBlock = new IndentInfo(indent, LPLBlock.RuleBlocks);
                                 } else {
                                     currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
                                 }
@@ -94,27 +132,44 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                     className,
                                     new vscode.Location(
                                         document.uri,
-                                        new vscode.Position(lineNum, line.firstNonWhitespaceCharacterIndex)
+                                        new vscode.Position(lineNum, 0)
                                     )
                                 );
                             }    
                         }
                         break;
                     case LPLBlock.PersistentFields:
+                    case LPLBlock.TransientFields:
+                    case LPLBlock.LocalFields:
                         match = fieldPattern.exec(line.text);
                         if (match !== null) {
                             if (currentBlock.contentIndent === undefined) {
                                 currentBlock.contentIndent = indent;
                             }
-                            result.push(new vscode.SymbolInformation(
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.Field);
+                            let kind: vscode.SymbolKind;
+                            switch (currentBlock.blockType) {
+                                case LPLBlock.LocalFields:
+                                    kind = vscode.SymbolKind.Variable;
+                                    break;
+                                case LPLBlock.TransientFields:
+                                    kind = vscode.SymbolKind.Property;
+                                    break;
+                                case LPLBlock.PersistentFields:
+                                default:
+                                    kind = vscode.SymbolKind.Field;
+                                    break;
+                            }
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
                                 match[1],
-                                vscode.SymbolKind.Field,
+                                kind,
                                 className,
-                                new vscode.Location(document.uri, new vscode.Position(lineNum, line.firstNonWhitespaceCharacterIndex))));
+                                new vscode.Location(document.uri, new vscode.Position(lineNum, 0)));
                         }
                         break;
                     case LPLBlock.Conditions:
-                        match = conditionPattern.exec(line.text);
+                        match = simpleNamePattern.exec(line.text);
                         if (match !== null) {
                             if (currentBlock.contentIndent === undefined) {
                                 currentBlock.contentIndent = indent;
@@ -123,9 +178,9 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                             currentBlock = new IndentInfo(indent, LPLBlock.Condition);
                             currentBlock.symbolInformation = new vscode.SymbolInformation(
                                 match[1],
-                                vscode.SymbolKind.Function,
+                                vscode.SymbolKind.Boolean,
                                 className,
-                                new vscode.Location(document.uri, new vscode.Position(lineNum, line.firstNonWhitespaceCharacterIndex)));
+                                new vscode.Location(document.uri, new vscode.Position(lineNum, 0)));
                         }
                         break;
                     case LPLBlock.Actions:
@@ -141,15 +196,187 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 vscode.SymbolKind.Method,
                                 className,
                                 new vscode.Location(document.uri,
-                                    new vscode.Position(lineNum, line.firstNonWhitespaceCharacterIndex)));
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.DerivedFields:
+                        match = derivedPattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.DerivedField);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Function,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.Relations:
+                        match = relationPattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.Relation);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Interface,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
                         }
                         break;
                     case LPLBlock.Action:
+                        match = actionHeadingPattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            currentBlock.contentIndent = indent;
+                            indentInfo.push(currentBlock);
+                            if (match[2] === "Parameters") {
+                                currentBlock = new IndentInfo(indent, LPLBlock.ActionParameters);
+                            } else if (match[2] === "Parameter Rules") {
+                                currentBlock = new IndentInfo(indent, LPLBlock.ActionParameterRules);
+                            } else if (match[2] === "Local Fields") {
+                                currentBlock = new IndentInfo(indent, LPLBlock.ActionLocalFields);
+                            } else if (match[2] === "Field Rules") {
+                                currentBlock = new IndentInfo(indent, LPLBlock.ActionLocalFieldRules);
+                            } else if (match[2] === "Rule Blocks") {
+                                currentBlock = new IndentInfo(indent, LPLBlock.ActionRuleBlocks);
+                            } else {
+                                currentBlock = new IndentInfo(indent, LPLBlock.ActionOtherSection);
+                            }
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[2],
+                                vscode.SymbolKind.Namespace,
+                                className,
+                                new vscode.Location(
+                                    document.uri,
+                                    new vscode.Position(lineNum, 0)
+                                )
+                            );
+                        }
+                        break;
+                    case LPLBlock.ActionParameters:
+                        match = fieldPattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.ActionParameter);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Variable,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.ActionParameterRules:
+                        match = simpleNamePattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.ActionParameterRule);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Function,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.ActionLocalFields:
+                        match = fieldPattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.ActionLocalField);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Variable,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.ActionLocalFieldRules:
+                        match = simpleNamePattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.ActionLocalFieldRule);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Function,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.ActionRuleBlocks:
+                        match = simpleNamePattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.ActionRuleBlock);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Function,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.RuleBlocks:
+                        match = simpleNamePattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.RuleBlock);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Function,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
                     case LPLBlock.Condition:
                     case LPLBlock.OtherSection:
+                    case LPLBlock.ActionOtherSection:                                        
+                    case LPLBlock.DerivedField:
+                    case LPLBlock.Relation:
+                    case LPLBlock.RuleBlock:
+                    case LPLBlock.ActionLocalField:
+                    case LPLBlock.ActionLocalFieldRule:
+                    case LPLBlock.ActionParameter:
+                    case LPLBlock.ActionParameterRule:
+                    case LPLBlock.ActionRuleBlock:
+                    case LPLBlock.Field:
                         if (currentBlock.contentIndent === undefined) {
                             currentBlock.contentIndent = indent;
                         }
+                        break;
+                    default:
+                        console.log("Unhandled block type: " + currentBlock.blockType);
                         break;
                 }
             }
@@ -190,6 +417,24 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
     }
 
     private popBlock(document: vscode.TextDocument, lineNum: number, currentBlock: IndentInfo): vscode.SymbolInformation | undefined {
+
+        switch(currentBlock.blockType){
+            case LPLBlock.ActionLocalField:
+            case LPLBlock.ActionLocalFieldRule:
+            //case LPLBlock.ActionLocalFieldRules:
+            //case LPLBlock.ActionLocalFields:
+            //case LPLBlock.ActionOtherSection:
+            case LPLBlock.ActionParameter:
+            case LPLBlock.ActionParameterRule:
+            //case LPLBlock.ActionParameterRules:
+            //case LPLBlock.ActionParameters:
+            case LPLBlock.ActionRuleBlock:
+            //case LPLBlock.ActionRuleBlocks:
+                if (!this.includeActionDetail) {
+                    return;
+                }
+        }
+
         if (currentBlock.symbolInformation !== undefined) {
             currentBlock.symbolInformation = new vscode.SymbolInformation(
                 currentBlock.symbolInformation.name,

@@ -11,6 +11,7 @@ enum LPLBlock {
     TransientFields,
     LocalFields,
     RuleBlocks,
+    Sets,
     OtherSection,
     Action,
     Condition,
@@ -28,7 +29,12 @@ enum LPLBlock {
     ActionLocalField,
     ActionParameterRule,
     ActionLocalFieldRule,
-    ActionRuleBlock
+    ActionRuleBlock,
+    List,
+    CardView,
+    Form,
+    CompositeForm,
+    SummaryForm
 }
 
 class IndentInfo {
@@ -54,7 +60,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
         let result: vscode.SymbolInformation[] = [];
         let classNamePattern = /^\s*(\w+)\s+is\s+a\s+BusinessClass\s*$/;
         let className: string = '';
-        let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions|Field Rules|Local Fields|Transient Fields|Field Groups|Rule Blocks)\s*(\/\/[^\n]*)?$/;
+        let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions|Field Rules|Local Fields|Transient Fields|Field Groups|Rule Blocks|Sets)\s*(\/\/[^\n]*)?$/;
         let actionHeadingPattern = /^(\s+)(Queue Mapping Fields|Set Is|Parameters|Parameter Rules|Local Fields|Results|Field Rules|SubType|Accumulators|Instance Selection|Sort Order(\s+is\s+\w+)|Action Rules|Entrance Rules|Exit Rules|InitiateRequest Rules|UpdateRequest Rules|CancelRequest Rules|Rollback Rules|Rule Blocks)\s*(\/\/[^\n]*)?$/;
         let comment =  /^\s*\/\/[^\n]*$/;
         let preprocessor = /^\#[^\n]*$/;
@@ -63,6 +69,12 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
         let relationPattern = /^\s+(\w+)(\s+(is\s+(a|an)\s+)?(\w+)\s+set)?\s*(\/\/[^\n]*)?$/;
         let fieldPattern = /^\s+(\w+)(\s+is\s+((a|an|like)\s+)?(\w+(\s+view)?|BusinessObjectReference\s+to\s+(\w+)|Unsigned\s+(Decimal|Percent)|EmailAddressField\s+with\s+multiple\s+addresses|Iteration\s+of\s+(\w+))((\s+size(\s+fixed|\s+up\s+to)?)?\s+\d+(\.\d+)?|(\s+group|\s+compute)(\s+in subject \w+)?)?)?\s*(\/\/[^\n]*)?$/;
         let simpleNamePattern = /^\s+(\w+)\s*(\/\/[^\n]*)?$/;
+        
+        let uiHeadingPattern = /^\s+(\w+)?(Context Message Invocations|Drill List|\s+is\s+(a|an)\s+((\w+)\s+Message|Navigation|CardView|(\w+\s+)?List|AuditList|DrillList|InstanceCountChart|Form|ActionForm|CompositeForm|WizardForm|MatrixForm|SearchForm|SummaryForm))\s*(\/\/[^\n]*)?$/;
+        let uiSubsectionPattern = /^\s+(Display Fields|Actions|Instance Selection|Layout|(\w+)\s+is\s+a\s+(Panel|MultiListPanel)|Detail Sections)\s*(\/\/[^\n]*)?$/;
+        let cardViewSection = /^\s+(left column|main column|right column)(\s+is\s+([A-Za-z0-9_.]+|representative image))?\s*(\/\/[^\n]*)?$/;
+        let summaryFormSection = /^\s+(First Page Header|Page Header|Page Footer|Layout)\s*(\/\/[^\n]*)?$/;
+
         let match: RegExpExecArray | null;
         let currentBlock: IndentInfo = new IndentInfo(0, LPLBlock.ClassRoot);
         let indentInfo: IndentInfo[] = [];
@@ -104,6 +116,22 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                             }
                         } else {
                             match = headingPattern.exec(line.text);
+                            let symbolText: string;
+                            let symbolKind = vscode.SymbolKind.Namespace;
+                            if (match === null) {
+                                match = uiHeadingPattern.exec(line.text);
+                                if (match !== null) {
+                                    if (match[1]) {
+                                        symbolText = match[1];
+                                    } else {
+                                        symbolText = match[2];
+                                    }
+                                } else {
+                                    symbolText = ""; // TSLint(?) apparently cannot detect that this will never apply below
+                                }
+                            } else {
+                                symbolText = match[2];
+                            }
                             if (match !== null) {
                                 currentBlock.contentIndent = indent;
                                 indentInfo.push(currentBlock);
@@ -123,12 +151,34 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                     currentBlock = new IndentInfo(indent, LPLBlock.LocalFields);
                                 } else if (match[2] === "Rule Blocks") {
                                     currentBlock = new IndentInfo(indent, LPLBlock.RuleBlocks);
+                                } else if (match[2] === "Sets") {
+                                    currentBlock = new IndentInfo(indent, LPLBlock.Sets);
+                                } else if (match[4] === "List" || match[6] !== undefined) {
+                                    symbolKind = vscode.SymbolKind.Interface;
+                                    currentBlock = new IndentInfo(indent, LPLBlock.List);
+                                } else if (match[4] === "CardView") {
+                                    symbolKind = vscode.SymbolKind.Interface;
+                                    currentBlock = new IndentInfo(indent, LPLBlock.CardView);
+                                } else if (match[4] === "ActionForm" ||
+                                    (match[4] === "Form")) {
+                                    symbolKind = vscode.SymbolKind.Interface;
+                                    currentBlock = new IndentInfo(indent, LPLBlock.Form);
+                                } else if (match[4] === "CompositeForm") {
+                                    symbolKind = vscode.SymbolKind.Interface;
+                                    currentBlock = new IndentInfo(indent, LPLBlock.CompositeForm);
+                                } else if (match[4] === "SummaryForm") {
+                                    symbolKind = vscode.SymbolKind.Interface;
+                                    currentBlock = new IndentInfo(indent, LPLBlock.SummaryForm);
+                                } else if (match[4] === "Navigation" ||
+                                    match[4] === "Message") {
+                                    symbolKind = vscode.SymbolKind.Class;
+                                    currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
                                 } else {
                                     currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
                                 }
                                 currentBlock.symbolInformation = new vscode.SymbolInformation(
-                                    match[2],
-                                    vscode.SymbolKind.Namespace,
+                                    symbolText,
+                                    symbolKind,
                                     className,
                                     new vscode.Location(
                                         document.uri,
@@ -223,6 +273,96 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                             }
                             indentInfo.push(currentBlock);
                             currentBlock = new IndentInfo(indent, LPLBlock.Relation);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Interface,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.Sets:
+                        match = simpleNamePattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Key,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;                    
+                    case LPLBlock.List:
+                    case LPLBlock.Form:                    
+                        match = uiSubsectionPattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Object,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.SummaryForm:
+                        match = summaryFormSection.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Namespace,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.CompositeForm:
+                        match = uiSubsectionPattern.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
+                            let name: string;
+                            let kind: vscode.SymbolKind;
+                            if (match[3]) {
+                                name = match[2];
+                                kind = vscode.SymbolKind.Class;
+                            } else {
+                                name = match[1];
+                                kind = vscode.SymbolKind.Namespace;
+                            }
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                name,
+                                kind,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
+                    case LPLBlock.CardView:
+                        match = cardViewSection.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
                             currentBlock.symbolInformation = new vscode.SymbolInformation(
                                 match[1],
                                 vscode.SymbolKind.Interface,

@@ -10,6 +10,10 @@ Navigate the code using the outline tree or the breadcrumbs bar.
 
 > Tip: The breadcrumbs bar is particularly useful in tracking (displaying) your current location within the file too.
 
+## Requirements	
+ 
+ This extension relies on the Infor LPL Language Server extension already being installed because that declares the busclass file type.
+
 ## Extension Settings
 
 * `lpl-outline.detail`
@@ -18,13 +22,22 @@ Navigate the code using the outline tree or the breadcrumbs bar.
 
 ## Known Issues
 
-* Does not properly parse UI `*.busclass` files yet.
+* No known issues
 
 ## Release Notes
 
 ### 0.0.2
 
-Alpha release of lpl-outline supports navigating most top level blocks within a `bl/*.busclass` file. Persisted fields, derived fields, transient fields, local fields, relations, conditions, rule blocks and actions are also called out. Within actions, if the detail level is set to `deep`, parameters, local fields, rule blocks parameter rules and field rules are also available.
+- Alpha release of lpl-outline supports navigating most top level blocks within a `bl/*.busclass` file. Persisted fields, derived fields, transient fields, local fields, relations, conditions, rule blocks and actions are also called out. Within actions, if the detail level is set to `deep`, parameters, local fields, rule blocks parameter rules and field rules are also available.
+
+### 0.0.3
+
+- Update for publishing to Visual Studio Marketplace.
+
+### 0.0.4
+
+- Add support for parsing `ui/*.busclass` files
+- Include `Sets` block in the processing for `bl/*.busclass` files.
 
 -----------------------------------------------------------------------------------------------------------
 

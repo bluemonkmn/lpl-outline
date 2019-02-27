@@ -17,6 +17,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
     - Context Fields
     - Form Invokes
     - Translation Field Rules
+
 ### Fixed
 - Parsing fields typed as `is a snapshot of BusinessClass` 
 

@@ -12,12 +12,14 @@ enum LPLBlock {
     LocalFields,
     RuleBlocks,
     Sets,
+    FieldRules,
     OtherSection,
     Action,
     Condition,
     DerivedField,
     Relation,
     Field,
+    FieldRule,
     RuleBlock,
     ActionParameters,
     ActionLocalFields,
@@ -60,15 +62,16 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
         let result: vscode.SymbolInformation[] = [];
         let classNamePattern = /^\s*(\w+)\s+is\s+a\s+BusinessClass\s*$/;
         let className: string = '';
-        let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions|Field Rules|Local Fields|Transient Fields|Field Groups|Rule Blocks|Sets)\s*(\/\/[^\n]*)?$/;
+        let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions|Field Rules|Local Fields|Transient Fields|Field Groups|Rule Blocks|Sets|Apply Pending Effective Rules|Audit Entry Rules|Commit Rules|Create Exit Rules|Delete Rules|Attach Rules|Action Exit Rules|Ontology|Patterns|Context Fields|Translation Field Rules|Form Invokes)\s*(\/\/[^\n]*)?$/;
         let actionHeadingPattern = /^(\s+)(Queue Mapping Fields|Set Is|Parameters|Parameter Rules|Local Fields|Results|Field Rules|SubType|Accumulators|Instance Selection|Sort Order(\s+is\s+\w+)|Action Rules|Entrance Rules|Exit Rules|InitiateRequest Rules|UpdateRequest Rules|CancelRequest Rules|Rollback Rules|Rule Blocks)\s*(\/\/[^\n]*)?$/;
         let comment =  /^\s*\/\/[^\n]*$/;
         let preprocessor = /^\#[^\n]*$/;
         let actionPattern = /^\s+(\w+)\s+is\s+(a|an)\s+((\w+)\s+)?(Request)?Action\s*(\/\/[^\n]*)?$/;
         let derivedPattern = /^\s+(\w+)\s+is\s+(a|an)\s+((\w+)\s+)?(aggregation\s+of\s(\w+)|ConditionalField|ComputeField|InstanceCount|StringField|MessageField|LabelField|DerivedField|NativeField)\s*(\/\/[^\n]*)?$/;
         let relationPattern = /^\s+(\w+)(\s+(is\s+(a|an)\s+)?(\w+)\s+set)?\s*(\/\/[^\n]*)?$/;
-        let fieldPattern = /^\s+(\w+)(\s+is\s+((a|an|like)\s+)?(\w+(\s+view)?|BusinessObjectReference\s+to\s+(\w+)|Unsigned\s+(Decimal|Percent)|EmailAddressField\s+with\s+multiple\s+addresses|Iteration\s+of\s+(\w+))((\s+size(\s+fixed|\s+up\s+to)?)?\s+\d+(\.\d+)?|(\s+group|\s+compute)(\s+in subject \w+)?)?)?\s*(\/\/[^\n]*)?$/;
+        let fieldPattern = /^\s+(\w+)(\s+is\s+((a|an|like)\s+)?(\w+(\s+view)?|BusinessObjectReference\s+to\s+(\w+)|Unsigned\s+(Decimal|Percent)|EmailAddressField\s+with\s+multiple\s+addresses|Iteration\s+of\s+(\w+)|snapshot\s+of\s+[\w._]+)((\s+size(\s+fixed|\s+up\s+to)?)?\s+\d+(\.\d+)?|(\s+group|\s+compute)(\s+in subject \w+)?)?)?\s*(\/\/[^\n]*)?$/;
         let simpleNamePattern = /^\s+(\w+)\s*(\/\/[^\n]*)?$/;
+        let fullFieldName = /^\s+([\w_.]+|bod id|(create|update) stamp(\.actor)?|relevance score|(authenticated|agent)\s*actor[\w_.]*|action comment|action type[\w_.]*|action tag|applied stamp|audit entry id|audit period[\w._]*|correction comment|effective date|effective time zone|effective through|entry stamp|initiating action|invoking action|reason code|system stamp|action request id|changed field names|changed fields|purge date|audit transaction id|server identity|remote identity|current async action request id|current action background group id|has future changes|user fields\s*(\(\w+\))?)\s*(\/\/[^\n]*)?$/;
         
         let uiHeadingPattern = /^\s+(\w+)?(Context Message Invocations|Drill List|\s+is\s+(a|an)\s+((\w+)\s+Message|Navigation|CardView|(\w+\s+)?List|AuditList|DrillList|InstanceCountChart|Form|ActionForm|CompositeForm|WizardForm|MatrixForm|SearchForm|SummaryForm))\s*(\/\/[^\n]*)?$/;
         let uiSubsectionPattern = /^\s+(Display Fields|Actions|Instance Selection|Layout|(\w+)\s+is\s+a\s+(Panel|MultiListPanel)|Detail Sections)\s*(\/\/[^\n]*)?$/;
@@ -151,6 +154,9 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                     currentBlock = new IndentInfo(indent, LPLBlock.LocalFields);
                                 } else if (match[2] === "Rule Blocks") {
                                     currentBlock = new IndentInfo(indent, LPLBlock.RuleBlocks);
+                                } else if (match[2] === "Field Rules" ||
+                                    match[2] === "Translation Field Rules") {
+                                    currentBlock = new IndentInfo(indent, LPLBlock.FieldRules);
                                 } else if (match[2] === "Sets") {
                                     currentBlock = new IndentInfo(indent, LPLBlock.Sets);
                                 } else if (match[4] === "List" || match[6] !== undefined) {
@@ -499,6 +505,22 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                     new vscode.Position(lineNum, 0)));
                         }
                         break;
+                    case LPLBlock.FieldRules:
+                        match = fullFieldName.exec(line.text);
+                        if (match !== null) {
+                            if (currentBlock.contentIndent === undefined) {
+                                currentBlock.contentIndent = indent;
+                            }
+                            indentInfo.push(currentBlock);
+                            currentBlock = new IndentInfo(indent, LPLBlock.FieldRule);
+                            currentBlock.symbolInformation = new vscode.SymbolInformation(
+                                match[1],
+                                vscode.SymbolKind.Function,
+                                className,
+                                new vscode.Location(document.uri,
+                                    new vscode.Position(lineNum, 0)));
+                        }
+                        break;
                     case LPLBlock.Condition:
                     case LPLBlock.OtherSection:
                     case LPLBlock.ActionOtherSection:                                        
@@ -511,6 +533,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                     case LPLBlock.ActionParameterRule:
                     case LPLBlock.ActionRuleBlock:
                     case LPLBlock.Field:
+                    case LPLBlock.FieldRule:
                         if (currentBlock.contentIndent === undefined) {
                             currentBlock.contentIndent = indent;
                         }

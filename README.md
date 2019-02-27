@@ -26,18 +26,24 @@ Navigate the code using the outline tree or the breadcrumbs bar.
 
 ## Release Notes
 
-### 0.0.2
+See [change log](CHANGELOG.md) for complete history.
 
-- Alpha release of lpl-outline supports navigating most top level blocks within a `bl/*.busclass` file. Persisted fields, derived fields, transient fields, local fields, relations, conditions, rule blocks and actions are also called out. Within actions, if the detail level is set to `deep`, parameters, local fields, rule blocks parameter rules and field rules are also available.
+### 0.1.0
 
-### 0.0.3
-
-- Update for publishing to Visual Studio Marketplace.
-
-### 0.0.4
-
-- Add support for parsing `ui/*.busclass` files
-- Include `Sets` block in the processing for `bl/*.busclass` files.
+- Parse individual field rules within `Field Rules` block.
+- Mark additional headings in `bl/*.busclass` files:
+    - Apply Pending Effective Rules
+    - Audit Entry Rules
+    - Commit Rules
+    - Create Exit Rules
+    - Delete Rules
+    - Attach Rules
+    - Action Exit Rules
+    - Ontology
+    - Patterns
+    - Context Fields
+    - Form Invokes
+    - Translation Field Rules
 
 -----------------------------------------------------------------------------------------------------------
 

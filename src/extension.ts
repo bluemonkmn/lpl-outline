@@ -12,12 +12,27 @@ export function activate(context: vscode.ExtensionContext) {
 	// This line of code will only be executed once when your extension is activated
 		console.log('LPL Outline extension is now active.');
 
+	let symbolProvider = new BusinessClassDocumentSymbolProvider();
 	context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(
 		[
 			{ language: 'busclass', pattern: '**/*.busclass' },
 			{ language: 'busclass', scheme: 'untitled'}
 		],
-		new BusinessClassDocumentSymbolProvider()));
+		symbolProvider));
+
+	context.subscriptions.push(vscode.languages.registerDefinitionProvider(
+		[
+			{ language: 'busclass', pattern: '**/*.busclass' },
+			{ language: 'busclass', scheme: 'untitled'}
+		]
+	, symbolProvider));
+
+	context.subscriptions.push(vscode.languages.registerHoverProvider(
+		[
+			{ language: 'busclass', pattern: '**/*.busclass' },
+			{ language: 'busclass', scheme: 'untitled'}
+		]
+	, symbolProvider));
 }
 
 // this method is called when your extension is deactivated

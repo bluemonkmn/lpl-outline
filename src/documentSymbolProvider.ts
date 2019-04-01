@@ -43,7 +43,8 @@ class IndentInfo {
     headingIndent: number;
     contentIndent: number | undefined;
     blockType: LPLBlock;
-    symbolInformation: vscode.SymbolInformation | undefined;
+	symbolInformation: vscode.SymbolInformation | undefined;
+	cache: ClassCache | undefined;
 
     constructor(intentLevel: number, blockType: LPLBlock){
         this.headingIndent = intentLevel;
@@ -51,15 +52,90 @@ class IndentInfo {
     }
 }
 
-export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbolProvider {
-    
+export class ActionCache {
+	public parameters = new Map<string, vscode.SymbolInformation>();
+	public ruleblocks = new Map<string, vscode.SymbolInformation>();
+	public fields = new Map<string, vscode.SymbolInformation>();
+	constructor(public definition: vscode.SymbolInformation) { }
+}
+
+export class ClassCache {
+	public fields = new Map<string, vscode.SymbolInformation>();
+	public relations = new Map<string, vscode.SymbolInformation>();
+	public ruleblocks = new Map<string, vscode.SymbolInformation>();
+	public actions = new Map<string, ActionCache>();
+	constructor(public definition: vscode.SymbolInformation) { }
+	public index: vscode.SymbolInformation[] = []; // sorted by location.range.start.line
+	public indexSymbol(symbol: vscode.SymbolInformation) {
+		if (this.index.length === 0 ||
+			this.index[this.index.length-1].location.range.start.line < symbol.location.range.start.line) {
+			this.index.push(symbol);
+		} else {
+			let location = this.findSymbolByLine(symbol.location.range.start.line);
+			this.index.splice(location.indexIndex, 0, symbol);
+		}
+	}
+	public findSymbolByLine(line: Number): {indexIndex: number; definitionContainsLine: boolean} {
+		let bot = 0;
+		let top = this.index.length;
+		while (bot < top) {
+			let mid = Math.floor((bot + top ) / 2);
+			if (this.index[mid].location.range.start.line > line) {
+				top = mid;
+			} else if (this.index[mid].location.range.end.line < line) {
+				bot = mid + 1;
+			} else {
+				if (this.index[mid].location.range.start.line <= line &&
+					this.index[mid].location.range.end.line >= line) {
+					return {indexIndex: mid, definitionContainsLine: true};
+				} else {
+					return {indexIndex: mid, definitionContainsLine: false};
+				}
+			}
+		}
+		if (this.index.length > bot &&
+			this.index[bot].location.range.start.line <= line &&
+			this.index[bot].location.range.end.line >= line) {
+				return {indexIndex: bot, definitionContainsLine: true};
+		} else {
+			return {indexIndex: bot, definitionContainsLine: false};
+		}
+	}
+}
+
+export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbolProvider, vscode.HoverProvider, vscode.DefinitionProvider {
     includeActionDetail: Boolean = vscode.workspace.getConfiguration("lpl-outline").detail === "deep";
 
-    public provideDocumentSymbols(
+	public cacheSymbols(document: vscode.TextDocument, token: vscode.CancellationToken): ClassCache | undefined {
+		if (this.parsedCache.has(document.uri)) {
+			return this.parsedCache.get(document.uri);
+		}
+		let result = this.parseDocument(document, token);
+		if (result !== undefined) {
+			this.parsedCache.set(document.uri, result.classcache);
+			return result.classcache;
+		}
+	}
+
+	public provideDocumentSymbols(
         document: vscode.TextDocument,    
         token: vscode.CancellationToken): vscode.SymbolInformation[]
     {
-        let result: vscode.SymbolInformation[] = [];
+		let result = this.parseDocument(document, token);
+		if (result !== undefined) {
+			this.parsedCache.set(document.uri, result.classcache);
+			return result.symbols;
+		}
+		return [];
+	}
+
+    private parseDocument(
+        document: vscode.TextDocument,    
+        token: vscode.CancellationToken): {symbols: vscode.SymbolInformation[]; classcache: ClassCache} | undefined
+    {
+		let result: vscode.SymbolInformation[] = [];
+		let classInfo: ClassCache | undefined;
+		let actionInfo: ActionCache | undefined;
         let classNamePattern = /^\s*(\w+)\s+is\s+a\s+BusinessClass\s*$/;
         let className: string = '';
         let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions|Field Rules|Local Fields|Transient Fields|Field Groups|Rule Blocks|Sets|Apply Pending Effective Rules|Audit Entry Rules|Commit Rules|Create Exit Rules|Delete Rules|Attach Rules|Action Exit Rules|Ontology|Patterns|Context Fields|Translation Field Rules|Form Invokes)\s*(\/\/[^\n]*)?$/;
@@ -109,13 +185,14 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                         if (currentBlock.symbolInformation === undefined) {
                             match = classNamePattern.exec(line.text);
                             if (match !== null) {
-                                className = match[1];
+								className = match[1];
                                 currentBlock.symbolInformation = new vscode.SymbolInformation(
                                     match[1],
                                     vscode.SymbolKind.Class,
                                     '',
                                     new vscode.Location(document.uri, new vscode.Position(0,0))
                                 );
+								classInfo = new ClassCache(currentBlock.symbolInformation);
                             }
                         } else {
                             match = headingPattern.exec(line.text);
@@ -221,7 +298,10 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 match[1],
                                 kind,
                                 className,
-                                new vscode.Location(document.uri, new vscode.Position(lineNum, 0)));
+								new vscode.Location(document.uri, new vscode.Position(lineNum, 0)));
+							if (classInfo !== undefined) {
+								classInfo.fields.set(match[1], currentBlock.symbolInformation);
+							}
                         }
                         break;
                     case LPLBlock.Conditions:
@@ -237,7 +317,10 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 vscode.SymbolKind.Boolean,
                                 className,
                                 new vscode.Location(document.uri, new vscode.Position(lineNum, 0)));
-                        }
+							if (classInfo !== undefined) {
+								classInfo.fields.set(match[1], currentBlock.symbolInformation);
+							}
+						}
                         break;
                     case LPLBlock.Actions:
                         match = actionPattern.exec(line.text);
@@ -252,7 +335,12 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 vscode.SymbolKind.Method,
                                 className,
                                 new vscode.Location(document.uri,
-                                    new vscode.Position(lineNum, 0)));
+									new vscode.Position(lineNum, 0)));
+							if (classInfo !== undefined) {
+								actionInfo = new ActionCache(currentBlock.symbolInformation);
+								classInfo.actions.set(match[1], actionInfo);
+								currentBlock.cache = classInfo;
+							}
                         }
                         break;
                     case LPLBlock.DerivedFields:
@@ -269,6 +357,9 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 className,
                                 new vscode.Location(document.uri,
                                     new vscode.Position(lineNum, 0)));
+							if (classInfo !== undefined) {
+								classInfo.fields.set(match[1], currentBlock.symbolInformation);
+							}
                         }
                         break;
                     case LPLBlock.Relations:
@@ -285,6 +376,9 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 className,
                                 new vscode.Location(document.uri,
                                     new vscode.Position(lineNum, 0)));
+							if (classInfo !== undefined) {
+								classInfo.relations.set(match[1], currentBlock.symbolInformation);
+							}
                         }
                         break;
                     case LPLBlock.Sets:
@@ -382,7 +476,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                         if (match !== null) {
                             if (currentBlock.contentIndent === undefined) {
                                 currentBlock.contentIndent = indent;
-                            }
+							}
                             currentBlock.contentIndent = indent;
                             indentInfo.push(currentBlock);
                             if (match[2] === "Parameters") {
@@ -422,7 +516,10 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 vscode.SymbolKind.Variable,
                                 className,
                                 new vscode.Location(document.uri,
-                                    new vscode.Position(lineNum, 0)));
+									new vscode.Position(lineNum, 0)));
+							if (actionInfo !== undefined) {
+								actionInfo.parameters.set(currentBlock.symbolInformation.name, currentBlock.symbolInformation); 
+							}
                         }
                         break;
                     case LPLBlock.ActionParameterRules:
@@ -455,6 +552,9 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 className,
                                 new vscode.Location(document.uri,
                                     new vscode.Position(lineNum, 0)));
+							if (actionInfo !== undefined) {
+								actionInfo.fields.set(currentBlock.symbolInformation.name, currentBlock.symbolInformation); 
+							}
                         }
                         break;
                     case LPLBlock.ActionLocalFieldRules:
@@ -487,6 +587,9 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 className,
                                 new vscode.Location(document.uri,
                                     new vscode.Position(lineNum, 0)));
+							if (actionInfo !== undefined) {
+								actionInfo.ruleblocks.set(currentBlock.symbolInformation.name, currentBlock.symbolInformation); 
+							}
                         }
                         break;
                     case LPLBlock.RuleBlocks:
@@ -502,7 +605,10 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 vscode.SymbolKind.Function,
                                 className,
                                 new vscode.Location(document.uri,
-                                    new vscode.Position(lineNum, 0)));
+									new vscode.Position(lineNum, 0)));
+							if (classInfo !== undefined) {
+								classInfo.ruleblocks.set(currentBlock.symbolInformation.name, currentBlock.symbolInformation);
+							}
                         }
                         break;
                     case LPLBlock.FieldRules:
@@ -556,8 +662,11 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                 break;
             }
             currentBlock = pop;
-        }
-        return result;
+		}
+		if (classInfo === undefined) {
+			return undefined;
+		}
+        return {symbols: result, classcache: classInfo};
     }
 
     private getColumn(line: string, end: number) : number {
@@ -610,8 +719,116 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                         new vscode.Position(lineNum-1, document.lineAt(lineNum-1).text.length)
                     )
                 )
-            );
+			);
+			if (currentBlock.cache !== undefined) {
+				currentBlock.cache.indexSymbol(currentBlock.symbolInformation);
+			}
             return currentBlock.symbolInformation;
         }
-    }
+	}
+	
+	private parsedCache:Map<vscode.Uri, ClassCache> = new Map();
+
+	provideDefinition(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.ProviderResult<vscode.Location | vscode.Location[] | vscode.LocationLink[]> {
+		let cache = this.cacheSymbols(document, token);
+		if (cache === undefined) {
+			return;
+		}
+
+		let wordRange = document.getWordRangeAtPosition(position);
+		if (wordRange === undefined) { return; }
+		let wordText = document.getText(wordRange);
+		let predecessor = new vscode.Range(new vscode.Position(wordRange.start.line, wordRange.start.character-1), wordRange.start);
+		if (document.getText(predecessor) === ".") {
+			let contextRange = document.getWordRangeAtPosition(new vscode.Position(wordRange.start.line, wordRange.start.character - 2));
+			let contextWord = document.getText(contextRange);
+			if (cache.relations.has(contextWord)) {
+				// TODO: look up busclass referenced by relation
+			}
+		}
+
+		let includePattern = /^\s*include\s+(\w+)\s*(\/\/[^\n]*)?$/;
+		let invokePattern = /^\s*invoke\s+(\w+)(\s+(\w+))?\s*(\/\/[^\n]*)?$/;
+
+		let found = cache.findSymbolByLine(position.line);
+		let symbol: vscode.SymbolInformation | undefined;
+		let match = includePattern.exec(document.lineAt(position.line).text);
+		if (found.definitionContainsLine) {
+			symbol = cache.index[found.indexIndex];
+			if (symbol.kind === vscode.SymbolKind.Method) {
+				let action = cache.actions.get(symbol.name);
+				if (action !== undefined) {
+					if (match !== null && match[1] === wordText) {
+						symbol = action.ruleblocks.get(wordText);
+						if (symbol !== undefined) {
+							return symbol.location;
+						}
+					}
+					symbol = action.parameters.get(wordText) || action.fields.get(wordText);
+					if (symbol !== undefined) {
+						return symbol.location;
+					}
+				}
+			}
+		}
+
+		if (match !== null && match[1] === wordText) {
+			symbol = cache.ruleblocks.get(wordText);
+			if (symbol !== undefined) {
+				return symbol.location;
+			}
+		}
+
+		match = invokePattern.exec(document.lineAt(position.line).text);
+		if (match !== null && match[1] === wordText) {
+			let action = cache.actions.get(wordText);
+			if (action !== undefined) {
+				return action.definition.location;
+			}
+		}
+
+		symbol = cache.fields.get(wordText) || cache.relations.get(wordText);
+		if (symbol !== undefined) {
+			return symbol.location;
+		}
+	}
+
+	provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.ProviderResult<vscode.Hover> {
+		let cache = this.cacheSymbols(document, token);
+		if (cache === undefined) {
+			return;
+		}
+
+		let wordRange = document.getWordRangeAtPosition(position);
+		if (wordRange === undefined) { return; }
+		let wordText = document.getText(wordRange);
+		let predecessor = new vscode.Range(new vscode.Position(wordRange.start.line, wordRange.start.character-1), wordRange.start);
+		if (document.getText(predecessor) === ".") {
+			let contextRange = document.getWordRangeAtPosition(new vscode.Position(wordRange.start.line, wordRange.start.character - 2));
+			let contextWord = document.getText(contextRange);
+			if (cache.relations.has(contextWord)) {
+				// TODO: look up busclass referenced by relation
+			}
+		}
+
+		let found = cache.findSymbolByLine(position.line);
+		let symbol: vscode.SymbolInformation | undefined;
+		if (found.definitionContainsLine) {
+			symbol = cache.index[found.indexIndex];
+			if (symbol.kind === vscode.SymbolKind.Method) {
+				let action = cache.actions.get(symbol.name);
+				if (action !== undefined) {
+					symbol = action.parameters.get(wordText) || action.fields.get(wordText);
+					if (symbol !== undefined) {
+						return new vscode.Hover(document.lineAt(symbol.location.range.start.line).text.trim());
+					}
+				}
+			}
+		}
+
+		symbol = cache.fields.get(wordText);
+		if (symbol !== undefined) {
+			return new vscode.Hover(document.lineAt(symbol.location.range.start.line).text.trim());
+		}
+	}
 }

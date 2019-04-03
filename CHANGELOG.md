@@ -1,6 +1,11 @@
 # Change Log
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.1] - 2019-04-03
+### Added
+- Go To Definition support
+- Hover text support
+
 ## [0.1.0] - 2019-02-27
 ### Added
 - Individual field rules within `Field Rules` block.

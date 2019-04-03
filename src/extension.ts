@@ -2,7 +2,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 
-import { BusinessClassDocumentSymbolProvider } from './documentSymbolProvider';
+import { BusinessClassDocumentSymbolProvider, SimpleDocument } from './documentSymbolProvider';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -33,6 +33,28 @@ export function activate(context: vscode.ExtensionContext) {
 			{ language: 'busclass', scheme: 'untitled'}
 		]
 	, symbolProvider));
+
+	let status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+	status.text = "$(tasklist) Parsing *.busclass files...";
+	status.show();
+
+	vscode.workspace.findFiles("**/*.busclass").then((files) => {
+		let loader: Promise<void>[] = [];
+		for(let file of files) {
+			loader.push(SimpleDocument.getSimpleDocument(file).then((doc) => {
+				status.text = `$(tasklist) Parsing ${file.fsPath}`;
+				console.log(`Parsing ${file.fsPath}`);
+				symbolProvider.cacheSymbols(doc);
+			}).catch((err) => {
+				status.text = `$(alert) Unable to open ${file}: ${err}`;
+				console.log(err);
+			}));
+		}
+		Promise.all(loader).then((value) => {
+			status.dispose();
+			console.log("Done parsing files");
+		});
+	});
 }
 
 // this method is called when your extension is deactivated

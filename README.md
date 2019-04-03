@@ -28,22 +28,10 @@ Navigate the code using the outline tree or the breadcrumbs bar.
 
 See [change log](CHANGELOG.md) for complete history.
 
-### 0.1.0
+### 0.1.1
 
-- Parse individual field rules within `Field Rules` block.
-- Mark additional headings in `bl/*.busclass` files:
-    - Apply Pending Effective Rules
-    - Audit Entry Rules
-    - Commit Rules
-    - Create Exit Rules
-    - Delete Rules
-    - Attach Rules
-    - Action Exit Rules
-    - Ontology
-    - Patterns
-    - Context Fields
-    - Form Invokes
-    - Translation Field Rules
+- Add simple Go To Definition support
+- Add simple hover text support
 
 -----------------------------------------------------------------------------------------------------------
 

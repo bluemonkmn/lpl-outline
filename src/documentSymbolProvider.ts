@@ -180,8 +180,8 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
     includeActionDetail: Boolean = vscode.workspace.getConfiguration("lpl-outline").detail === "deep";
 
 	public cacheSymbols(document: vscode.TextDocument | SimpleDocument, token?: vscode.CancellationToken | undefined): ClassCache | undefined {
-		if (this.parsedCache.has(document.uri)) {
-			return this.parsedCache.get(document.uri);
+		if (this.parsedCache.has(document.uri.fsPath)) {
+			return this.parsedCache.get(document.uri.fsPath);
 		}
 		let result = this.parseDocument(document, token);
 		if (result !== undefined) {
@@ -776,7 +776,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 	// and this.symbolCache always links a class name to a BL ClassCache, which in turn links to a UI ClassCache
 	// when both are available, or links directly to a UI ClassCache if that's all that's available.
 	private updateCache(document: vscode.TextDocument | SimpleDocument, toCache: ClassCache) {
-		this.parsedCache.set(document.uri, toCache);
+		this.parsedCache.set(document.uri.fsPath, toCache);
 		let existingClass = this.symbolCache.get(toCache.definition.name);
 		if (existingClass) {
 			if (existingClass.isUI) {
@@ -869,7 +869,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
         }
 	}
 	
-	private parsedCache:Map<vscode.Uri, ClassCache> = new Map();
+	public parsedCache:Map<string, ClassCache> = new Map();
 	private symbolCache:Map<string, ClassCache> = new Map();
 
 	provideDefinition(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.ProviderResult<vscode.Location | vscode.Location[] | vscode.LocationLink[]> {

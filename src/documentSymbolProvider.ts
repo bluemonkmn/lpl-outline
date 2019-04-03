@@ -46,6 +46,7 @@ class IndentInfo {
     blockType: LPLBlock;
 	symbolInformation: vscode.SymbolInformation | undefined;
 	cache: ClassCache | undefined;
+	formInfo: FormCache | undefined;
 
     constructor(intentLevel: number, blockType: LPLBlock){
         this.headingIndent = intentLevel;
@@ -67,7 +68,12 @@ class RelationCache {
 }
 
 class FieldCache {
-	constructor(public definition: vscode.SymbolInformation,public hoverText: string) { }
+	constructor(public definition: vscode.SymbolInformation, public hoverText: string) { }
+}
+
+class FormCache {
+	constructor(public definition: vscode.SymbolInformation) { }
+	public actionName: string | undefined;
 }
 
 export class ClassCache {
@@ -75,6 +81,7 @@ export class ClassCache {
 	public relations = new Map<string, RelationCache>();
 	public ruleblocks = new Map<string, vscode.SymbolInformation>();
 	public actions = new Map<string, ActionCache>();
+	public actionForms = new Map<string, FormCache>();
 	constructor(public definition: vscode.SymbolInformation) { }
 	public index: vscode.SymbolInformation[] = []; // sorted by location.range.start.line
 	public isUI: boolean = false;
@@ -203,6 +210,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		let classInfo: ClassCache | undefined;
 		let actionInfo: ActionCache | undefined;
 		let relationInfo: RelationCache | undefined;
+		let formInfo: FormCache | undefined;
         let classNamePattern = /^\s*(\w+)\s+is\s+a\s+BusinessClass\s*$/;
         let className: string = '';
         let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions|Field Rules|Local Fields|Transient Fields|Field Groups|Rule Blocks|Sets|Apply Pending Effective Rules|Audit Entry Rules|Commit Rules|Create Exit Rules|Delete Rules|Attach Rules|Action Exit Rules|Ontology|Patterns|Context Fields|Translation Field Rules|Form Invokes)\s*(\/\/[^\n]*)?$/;
@@ -220,7 +228,8 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
         let uiHeadingPattern = /^\s+(\w+)?(Context Message Invocations|Drill List|\s+is\s+(a|an)\s+((\w+)\s+Message|Navigation|CardView|(\w+\s+)?List|AuditList|DrillList|InstanceCountChart|Form|ActionForm|CompositeForm|WizardForm|MatrixForm|SearchForm|SummaryForm))\s*(\/\/[^\n]*)?$/;
         let uiSubsectionPattern = /^\s+(Display Fields|Actions|Instance Selection|Layout|(\w+)\s+is\s+a\s+(Panel|MultiListPanel)|Detail Sections)\s*(\/\/[^\n]*)?$/;
         let cardViewSection = /^\s+(left column|main column|right column)(\s+is\s+([A-Za-z0-9_.]+|representative image))?\s*(\/\/[^\n]*)?$/;
-        let summaryFormSection = /^\s+(First Page Header|Page Header|Page Footer|Layout)\s*(\/\/[^\n]*)?$/;
+		let summaryFormSection = /^\s+(First Page Header|Page Header|Page Footer|Layout)\s*(\/\/[^\n]*)?$/;
+		let actionIsPattern = /^\s+action\s+is\s+(\w+)\s*(\/\/[^\n]*)?$/;
 
         let match: RegExpExecArray | null;
         let currentBlock: IndentInfo = new IndentInfo(0, LPLBlock.ClassRoot);
@@ -238,7 +247,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
             while (indent <= currentBlock.headingIndent && currentBlock.symbolInformation !== undefined) {
                 let pushData = this.popBlock(document, lineNum, currentBlock);
                 if (pushData !== undefined) {
-                    result.push(pushData);
+					result.push(pushData);
                 }
                 let pop = indentInfo.pop();
                 if (pop === undefined) {
@@ -338,7 +347,12 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                         document.uri,
                                         new vscode.Position(lineNum, 0)
                                     )
-                                );
+								);
+								if (currentBlock.blockType === LPLBlock.Form) {
+									formInfo = new FormCache(currentBlock.symbolInformation);
+									currentBlock.cache = classInfo;
+									currentBlock.formInfo = formInfo;
+								}
                             }    
                         }
                         break;
@@ -483,7 +497,13 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 className,
                                 new vscode.Location(document.uri,
                                     new vscode.Position(lineNum, 0)));
-                        }
+                        } else {
+							match = actionIsPattern.exec(line.text);
+							if (match !== null && formInfo !== undefined) {
+								formInfo.actionName = match[1];
+							}
+							currentBlock.cache = classInfo;
+						}
                         break;
                     case LPLBlock.SummaryForm:
                         match = summaryFormSection.exec(line.text);
@@ -840,8 +860,12 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 			);
 			if (currentBlock.cache !== undefined) {
 				currentBlock.cache.indexSymbol(currentBlock.symbolInformation);
+				if (currentBlock.blockType === LPLBlock.Form && currentBlock.formInfo !== undefined) {
+					currentBlock.formInfo.definition = currentBlock.symbolInformation;
+					currentBlock.cache.actionForms.set(currentBlock.symbolInformation.name, currentBlock.formInfo);
+				}
 			}
-            return currentBlock.symbolInformation;
+			return currentBlock.symbolInformation;
         }
 	}
 	
@@ -854,6 +878,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		if (cache === undefined) {
 			return;
 		}
+		let blCache = (cache.isUI && cache.linkToOther !== null) ? cache.linkToOther : cache;
 
 		let wordRange = document.getWordRangeAtPosition(position);
 		if (wordRange === undefined) { return; }
@@ -862,23 +887,23 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		if (document.getText(predecessor) === ".") {
 			let contextRange = document.getWordRangeAtPosition(new vscode.Position(wordRange.start.line, wordRange.start.character - 2));
 			let contextWord = document.getText(contextRange);
-			let relationInfo = cache.relations.get(contextWord);
+			let relationInfo = blCache.relations.get(contextWord);
 			if (relationInfo) {
 				let maxDepth = 10;
 				while (relationInfo && relationInfo.targetsRelation && --maxDepth > 0 && relationInfo.target !== undefined) {
-					relationInfo = cache.relations.get(relationInfo.target);
+					relationInfo = blCache.relations.get(relationInfo.target);
 				}
 				if (relationInfo !== undefined && relationInfo.target !== undefined) {
 					let otherClass = this.symbolCache.get(relationInfo.target);
 					if (otherClass !== undefined) {
-						cache = otherClass;
+						blCache = otherClass;
 						hasContext = true;
 					}
 				}
 			} else {
 				let classContext = this.symbolCache.get(contextWord);
 				if (classContext !== undefined) {
-					cache = classContext;
+					blCache = classContext;
 					hasContext = true;
 				}
 			}
@@ -894,7 +919,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 			if (found.definitionContainsLine) {
 				symbol = cache.index[found.indexIndex];
 				if (symbol.kind === vscode.SymbolKind.Method) {
-					let action = cache.actions.get(symbol.name);
+					let action = blCache.actions.get(symbol.name);
 					if (action !== undefined) {
 						if (match !== null && match[1] === wordText) {
 							symbol = action.ruleblocks.get(wordText);
@@ -907,12 +932,23 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 							return symbol.location;
 						}
 					}
+				} else if (symbol.kind === vscode.SymbolKind.Interface) {
+					let actionForm = cache.actionForms.get(symbol.name);
+					if (actionForm !== undefined && actionForm.actionName !== undefined) {
+						let action = blCache.actions.get(actionForm.actionName);
+						if (action !== undefined) {
+							symbol = action.parameters.get(wordText) || action.fields.get(wordText);
+							if (symbol !== undefined) {
+								return symbol.location;
+							}
+						}
+					}
 				}
 			}
 		}
 
 		if (match !== null && match[1] === wordText) {
-			symbol = cache.ruleblocks.get(wordText);
+			symbol = blCache.ruleblocks.get(wordText);
 			if (symbol !== undefined) {
 				return symbol.location;
 			}
@@ -928,18 +964,18 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 				}
 			}
 			if (action === undefined) {
-				action = cache.actions.get(wordText);
+				action = blCache.actions.get(wordText);
 			}
 			if (action !== undefined) {
 				return action.definition.location;
 			}
 		}
 
-		let relation = cache.relations.get(wordText);
+		let relation = blCache.relations.get(wordText);
 		if (relation !== undefined) {
 			symbol = relation.definition;
 		} else {
-			let field = cache.fields.get(wordText);
+			let field = blCache.fields.get(wordText);
 			if (field !== undefined) {
 				symbol = field.definition;
 			}

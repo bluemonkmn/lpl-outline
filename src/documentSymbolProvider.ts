@@ -55,16 +55,17 @@ class IndentInfo {
 }
 
 export class ActionCache {
-	public parameters = new Map<string, vscode.SymbolInformation>();
+	public parameters = new Map<string, FieldCache>();
 	public ruleblocks = new Map<string, vscode.SymbolInformation>();
-	public fields = new Map<string, vscode.SymbolInformation>();
-	constructor(public definition: vscode.SymbolInformation) { }
+	public fields = new Map<string, FieldCache>();
+	constructor(public definition: vscode.SymbolInformation, public hoverText: string) { }
 }
 
 class RelationCache {
 	constructor(public definition: vscode.SymbolInformation) { }
 	public targetsRelation: boolean = false;
 	public target: string | undefined;
+	public hoverText: string | undefined;
 }
 
 class FieldCache {
@@ -422,7 +423,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 new vscode.Location(document.uri,
 									new vscode.Position(lineNum, 0)));
 							if (classInfo !== undefined) {
-								actionInfo = new ActionCache(currentBlock.symbolInformation);
+								actionInfo = new ActionCache(currentBlock.symbolInformation, line.text.trimRight());
 								classInfo.actions.set(match[1], actionInfo);
 								currentBlock.cache = classInfo;
 							}
@@ -609,7 +610,8 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 new vscode.Location(document.uri,
 									new vscode.Position(lineNum, 0)));
 							if (actionInfo !== undefined) {
-								actionInfo.parameters.set(currentBlock.symbolInformation.name, currentBlock.symbolInformation); 
+								actionInfo.parameters.set(currentBlock.symbolInformation.name,
+									new FieldCache(currentBlock.symbolInformation, line.text.trimRight()));
 							}
                         }
                         break;
@@ -644,7 +646,8 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 new vscode.Location(document.uri,
                                     new vscode.Position(lineNum, 0)));
 							if (actionInfo !== undefined) {
-								actionInfo.fields.set(currentBlock.symbolInformation.name, currentBlock.symbolInformation); 
+								actionInfo.fields.set(currentBlock.symbolInformation.name,
+									new FieldCache(currentBlock.symbolInformation, line.text.trimRight()));
 							}
                         }
                         break;
@@ -728,6 +731,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 							if (match[2] === "using") {
 								relationInfo.targetsRelation = true;
 							}
+							relationInfo.hoverText = line.text.trimRight();
 							relationInfo = undefined;
 						}
 						break;
@@ -873,6 +877,16 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 	private symbolCache:Map<string, ClassCache> = new Map();
 
 	provideDefinition(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.ProviderResult<vscode.Location | vscode.Location[] | vscode.LocationLink[]> {
+		let symbol = this.lookupSymbol(document, position, token);
+		if (symbol instanceof vscode.SymbolInformation) {
+			return symbol.location;
+		}
+		if (symbol instanceof FieldCache || symbol instanceof RelationCache || symbol instanceof ActionCache || symbol instanceof ClassCache) {
+			return symbol.definition.location;
+		}
+	}
+
+	lookupSymbol(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.SymbolInformation | FieldCache | RelationCache | ActionCache | ClassCache | undefined {
 		let cache = this.cacheSymbols(document, token);
 		let hasContext = false;
 		if (cache === undefined) {
@@ -913,7 +927,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		let invokePattern = /^\s*invoke\s+(\w+)(\s+(\w+))?\s*(\/\/[^\n]*)?$/;
 
 		let match = includePattern.exec(document.lineAt(position.line).text);
-		let symbol: vscode.SymbolInformation | undefined;
+		let symbol: vscode.SymbolInformation | FieldCache | RelationCache | ActionCache | ClassCache | undefined;
 		if (!hasContext) {
 			let found = cache.findSymbolByLine(position.line);
 			if (found.definitionContainsLine) {
@@ -924,12 +938,12 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 						if (match !== null && match[1] === wordText) {
 							symbol = action.ruleblocks.get(wordText);
 							if (symbol !== undefined) {
-								return symbol.location;
+								return symbol;
 							}
 						}
 						symbol = action.parameters.get(wordText) || action.fields.get(wordText);
 						if (symbol !== undefined) {
-							return symbol.location;
+							return symbol;
 						}
 					}
 				} else if (symbol.kind === vscode.SymbolKind.Interface) {
@@ -939,7 +953,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 						if (action !== undefined) {
 							symbol = action.parameters.get(wordText) || action.fields.get(wordText);
 							if (symbol !== undefined) {
-								return symbol.location;
+								return symbol;
 							}
 						}
 					}
@@ -950,97 +964,42 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		if (match !== null && match[1] === wordText) {
 			symbol = blCache.ruleblocks.get(wordText);
 			if (symbol !== undefined) {
-				return symbol.location;
+				return symbol;
 			}
 		}
 
 		match = invokePattern.exec(document.lineAt(position.line).text);
 		if (match !== null && match[1] === wordText) {
-			let action: ActionCache | undefined;
 			if (match[3]) {
 				let busclass = this.symbolCache.get(match[3]);
 				if (busclass) {
-					action = busclass.actions.get(wordText);
+					symbol = busclass.actions.get(wordText);
 				}
 			}
-			if (action === undefined) {
-				action = blCache.actions.get(wordText);
+			if (symbol === undefined) {
+				symbol = blCache.actions.get(wordText);
 			}
-			if (action !== undefined) {
-				return action.definition.location;
+			if (symbol !== undefined) {
+				return symbol;
 			}
 		}
 
-		let relation = blCache.relations.get(wordText);
-		if (relation !== undefined) {
-			symbol = relation.definition;
-		} else {
-			let field = blCache.fields.get(wordText);
-			if (field !== undefined) {
-				symbol = field.definition;
-			}
+		symbol = blCache.relations.get(wordText);
+		if (symbol === undefined) {
+			symbol = blCache.fields.get(wordText);
 		}
-		if (symbol !== undefined) {
-			return symbol.location;
+		if (symbol === undefined && !hasContext) {
+			symbol = this.symbolCache.get(wordText);
 		}
+		return symbol;
 	}
 
 	provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.ProviderResult<vscode.Hover> {
-		let cache = this.cacheSymbols(document, token);
-		let hasContext = false;
-		if (cache === undefined) {
-			return;
-		}
-
-		let wordRange = document.getWordRangeAtPosition(position);
-		if (wordRange === undefined) { return; }
-		let wordText = document.getText(wordRange);
-		let predecessor = new vscode.Range(new vscode.Position(wordRange.start.line, wordRange.start.character-1), wordRange.start);
-		if (document.getText(predecessor) === ".") {
-			let contextRange = document.getWordRangeAtPosition(new vscode.Position(wordRange.start.line, wordRange.start.character - 2));
-			let contextWord = document.getText(contextRange);
-			let relationInfo = cache.relations.get(contextWord);
-			if (relationInfo) {
-				let maxDepth = 10;
-				while (relationInfo && relationInfo.targetsRelation && --maxDepth > 0 && relationInfo.target !== undefined) {
-					relationInfo = cache.relations.get(relationInfo.target);
-				}
-				if (relationInfo !== undefined && relationInfo.target !== undefined) {
-					let otherClass = this.symbolCache.get(relationInfo.target);
-					if (otherClass !== undefined) {
-						cache = otherClass;
-						hasContext = true;
-					}
-				}
-			} else {
-				let classContext = this.symbolCache.get(contextWord);
-				if (classContext !== undefined) {
-					cache = classContext;
-					hasContext = true;
-				}
+		let symbol = this.lookupSymbol(document, position, token);
+		if (symbol instanceof FieldCache || symbol instanceof RelationCache || symbol instanceof ActionCache) {
+			if (symbol.hoverText !== undefined) {
+				return new vscode.Hover(symbol.hoverText);
 			}
-		}
-
-		let symbol: vscode.SymbolInformation | undefined;
-		if (!hasContext) {
-			let found = cache.findSymbolByLine(position.line);
-			if (found.definitionContainsLine) {
-				symbol = cache.index[found.indexIndex];
-				if (symbol.kind === vscode.SymbolKind.Method) {
-					let action = cache.actions.get(symbol.name);
-					if (action !== undefined) {
-						symbol = action.parameters.get(wordText) || action.fields.get(wordText);
-						if (symbol !== undefined) {
-							return new vscode.Hover(document.lineAt(symbol.location.range.start.line).text.trim());
-						}
-					}
-				}
-			}
-		}
-
-		let field = cache.fields.get(wordText);
-		if (field !== undefined) {
-			return new vscode.Hover(field.hoverText);
 		}
 	}
 }

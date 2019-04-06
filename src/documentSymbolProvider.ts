@@ -83,43 +83,101 @@ export class ClassCache {
 	public ruleblocks = new Map<string, vscode.SymbolInformation>();
 	public actions = new Map<string, ActionCache>();
 	public actionForms = new Map<string, FormCache>();
-	constructor(public definition: vscode.SymbolInformation) { }
-	public index: vscode.SymbolInformation[] = []; // sorted by location.range.start.line
-	public isUI: boolean = false;
-	public linkToOther: ClassCache | null = null;
-	public indexSymbol(symbol: vscode.SymbolInformation) {
-		if (this.index.length === 0 ||
-			this.index[this.index.length-1].location.range.start.line < symbol.location.range.start.line) {
-			this.index.push(symbol);
+	public definitions: vscode.SymbolInformation[];
+	constructor(definition: vscode.SymbolInformation) {
+		this.definitions = [definition];
+	}
+	// index is keyed by uri.fsPath and each array is sorted by location.range.start.line
+	public index: Map<string, vscode.SymbolInformation[]> = new Map<string, vscode.SymbolInformation[]>();
+	public indexSymbol(fsPath: string, symbol: vscode.SymbolInformation) {
+		let index = this.index.get(fsPath);
+		if (index === undefined) {
+			index = [];
+			this.index.set(fsPath, index);
+		}
+		if (index.length === 0 ||
+			index[index.length-1].location.range.start.line < symbol.location.range.start.line) {
+			index.push(symbol);
 		} else {
-			let location = this.findSymbolByLine(symbol.location.range.start.line);
-			this.index.splice(location.indexIndex, 0, symbol);
+			let location = this.findSymbolByLine(fsPath, symbol.location.range.start.line);
+			index.splice(location.indexIndex, 0, symbol);
 		}
 	}
-	public findSymbolByLine(line: Number): {indexIndex: number; definitionContainsLine: boolean} {
+	public findSymbolByLine(fsPath: string, line: Number): {indexIndex: number; definitionContainsLine: boolean} {
+		let index = this.index.get(fsPath);
+		if (index === undefined) {
+			return {indexIndex: 0, definitionContainsLine: false};
+		}
 		let bot = 0;
-		let top = this.index.length;
+		let top = index.length;
 		while (bot < top) {
 			let mid = Math.floor((bot + top ) / 2);
-			if (this.index[mid].location.range.start.line > line) {
+			if (index[mid].location.range.start.line > line) {
 				top = mid;
-			} else if (this.index[mid].location.range.end.line < line) {
+			} else if (index[mid].location.range.end.line < line) {
 				bot = mid + 1;
 			} else {
-				if (this.index[mid].location.range.start.line <= line &&
-					this.index[mid].location.range.end.line >= line) {
+				if (index[mid].location.range.start.line <= line &&
+					index[mid].location.range.end.line >= line) {
 					return {indexIndex: mid, definitionContainsLine: true};
 				} else {
 					return {indexIndex: mid, definitionContainsLine: false};
 				}
 			}
 		}
-		if (this.index.length > bot &&
-			this.index[bot].location.range.start.line <= line &&
-			this.index[bot].location.range.end.line >= line) {
+		if (index.length > bot &&
+			index[bot].location.range.start.line <= line &&
+			index[bot].location.range.end.line >= line) {
 				return {indexIndex: bot, definitionContainsLine: true};
 		} else {
 			return {indexIndex: bot, definitionContainsLine: false};
+		}
+	}
+
+	public removeFileFromCache(fsPath: string) {
+		let defIndex = this.definitions.findIndex((d) => {return d.location.uri.fsPath === fsPath;});
+		if (defIndex) {
+			this.definitions.splice(defIndex, 1);
+		}
+		for(let collection of [this.fields, this.relations, this.actions, this.actionForms]) {
+			for(let [name, value] of collection) {
+				if (value.definition.location.uri.fsPath === fsPath) {
+					collection.delete(name);
+				}
+			}
+		}
+		for(let [name, value] of this.ruleblocks) {
+			if (value.location.uri.fsPath === fsPath) {
+				this.ruleblocks.delete(name);
+			}
+		}
+		this.index.delete(fsPath);
+	}
+
+	public merge(cache: ClassCache) {
+		for (let definition of cache.definitions) {
+			if (this.definitions.findIndex((d) => {return d.location.uri.fsPath === definition.location.uri.fsPath;}) >= 0) {
+				this.removeFileFromCache(definition.location.uri.fsPath);
+			}
+			this.definitions.push(definition);
+		}
+		for(let [name, value] of cache.fields) {				
+			this.fields.set(name, value);
+		}
+		for(let [name, value] of cache.relations) {
+			this.relations.set(name, value);
+		}
+		for(let [name, value] of cache.actions) {
+			this.actions.set(name, value);
+		}
+		for(let [name, value] of cache.actionForms) {
+			this.actionForms.set(name, value);
+		}
+		for(let [name, value] of cache.ruleblocks) {
+			this.ruleblocks.set(name, value);
+		}
+		for(let [name, value] of cache.index) {
+			this.index.set(name, value);
 		}
 	}
 }
@@ -283,9 +341,6 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                         symbolText = match[1];
                                     } else {
                                         symbolText = match[2];
-									}
-									if (classInfo !== undefined) {
-										classInfo.isUI = true;
 									}
                                 } else {
                                     symbolText = ""; // TSLint(?) apparently cannot detect that this will never apply below
@@ -779,35 +834,14 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 	// Ensure that this.parsedCache always links a document uri to the ClassCache,
 	// and this.symbolCache always links a class name to a BL ClassCache, which in turn links to a UI ClassCache
 	// when both are available, or links directly to a UI ClassCache if that's all that's available.
-	private updateCache(document: vscode.TextDocument | SimpleDocument, toCache: ClassCache) {
-		this.parsedCache.set(document.uri.fsPath, toCache);
-		let existingClass = this.symbolCache.get(toCache.definition.name);
+	private updateCache(document: vscode.TextDocument | SimpleDocument, toCache: ClassCache) {		
+		let existingClass = this.symbolCache.get(toCache.definitions[0].name);
 		if (existingClass) {
-			if (existingClass.isUI) {
-				// Replace old UI cache with new class cache whether the new one is UI or BL
-				this.symbolCache.set(toCache.definition.name, toCache);
-				if (!toCache.isUI) {
-					// If the new cache is BL, keep the old UI cache as the linked other cache
-					existingClass.linkToOther = toCache;
-					toCache.linkToOther = existingClass;
-				}
-			} else {
-				if (toCache.isUI) {
-					// If the new cache is UI, hang it off the existing BL as the link to other, replacing any other linked cache
-					existingClass.linkToOther = toCache;
-					toCache.linkToOther = existingClass;
-				} else {
-					// If the new cache is BL, replace the existing BL cache, but keep any existing linked UI cache
-					this.symbolCache.set(toCache.definition.name, toCache);
-					toCache.linkToOther = existingClass.linkToOther;
-					if (existingClass.linkToOther !== null) {
-						// Update link on already-existing UI cache to point back to new BL cache
-						existingClass.linkToOther.linkToOther = toCache;
-					}
-				}
-			}
+			existingClass.merge(toCache);
+			this.parsedCache.set(document.uri.fsPath, existingClass);
 		} else {
-			this.symbolCache.set(toCache.definition.name, toCache);
+			this.symbolCache.set(toCache.definitions[0].name, toCache);
+			this.parsedCache.set(document.uri.fsPath, toCache);
 		}
 	}
 
@@ -863,7 +897,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                 )
 			);
 			if (currentBlock.cache !== undefined) {
-				currentBlock.cache.indexSymbol(currentBlock.symbolInformation);
+				currentBlock.cache.indexSymbol(document.uri.fsPath, currentBlock.symbolInformation);
 				if (currentBlock.blockType === LPLBlock.Form && currentBlock.formInfo !== undefined) {
 					currentBlock.formInfo.definition = currentBlock.symbolInformation;
 					currentBlock.cache.actionForms.set(currentBlock.symbolInformation.name, currentBlock.formInfo);
@@ -881,8 +915,11 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		if (symbol instanceof vscode.SymbolInformation) {
 			return symbol.location;
 		}
-		if (symbol instanceof FieldCache || symbol instanceof RelationCache || symbol instanceof ActionCache || symbol instanceof ClassCache) {
+		if (symbol instanceof FieldCache || symbol instanceof RelationCache || symbol instanceof ActionCache) {
 			return symbol.definition.location;
+		}
+		if (symbol instanceof ClassCache) {			
+			return symbol.definitions.map((e) => {return e.location;});
 		}
 	}
 
@@ -892,33 +929,34 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		if (cache === undefined) {
 			return;
 		}
-		let blCache = (cache.isUI && cache.linkToOther !== null) ? cache.linkToOther : cache;
 
 		let wordRange = document.getWordRangeAtPosition(position);
 		if (wordRange === undefined) { return; }
 		let wordText = document.getText(wordRange);
-		let predecessor = new vscode.Range(new vscode.Position(wordRange.start.line, wordRange.start.character-1), wordRange.start);
-		if (document.getText(predecessor) === ".") {
-			let contextRange = document.getWordRangeAtPosition(new vscode.Position(wordRange.start.line, wordRange.start.character - 2));
-			let contextWord = document.getText(contextRange);
-			let relationInfo = blCache.relations.get(contextWord);
-			if (relationInfo) {
-				let maxDepth = 10;
-				while (relationInfo && relationInfo.targetsRelation && --maxDepth > 0 && relationInfo.target !== undefined) {
-					relationInfo = blCache.relations.get(relationInfo.target);
-				}
-				if (relationInfo !== undefined && relationInfo.target !== undefined) {
-					let otherClass = this.symbolCache.get(relationInfo.target);
-					if (otherClass !== undefined) {
-						blCache = otherClass;
+		if (wordRange.start.line > 1 || wordRange.start.character > 1) {
+			let predecessor = new vscode.Range(new vscode.Position(wordRange.start.line, wordRange.start.character-1), wordRange.start);
+			if (document.getText(predecessor) === ".") {
+				let contextRange = document.getWordRangeAtPosition(new vscode.Position(wordRange.start.line, wordRange.start.character - 2));
+				let contextWord = document.getText(contextRange);
+				let relationInfo = cache.relations.get(contextWord);
+				if (relationInfo) {
+					let maxDepth = 10;
+					while (relationInfo && relationInfo.targetsRelation && --maxDepth > 0 && relationInfo.target !== undefined) {
+						relationInfo = cache.relations.get(relationInfo.target);
+					}
+					if (relationInfo !== undefined && relationInfo.target !== undefined) {
+						let otherClass = this.symbolCache.get(relationInfo.target);
+						if (otherClass !== undefined) {
+							cache = otherClass;
+							hasContext = true;
+						}
+					}
+				} else {
+					let classContext = this.symbolCache.get(contextWord);
+					if (classContext !== undefined) {
+						cache = classContext;
 						hasContext = true;
 					}
-				}
-			} else {
-				let classContext = this.symbolCache.get(contextWord);
-				if (classContext !== undefined) {
-					blCache = classContext;
-					hasContext = true;
 				}
 			}
 		}
@@ -929,31 +967,34 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		let match = includePattern.exec(document.lineAt(position.line).text);
 		let symbol: vscode.SymbolInformation | FieldCache | RelationCache | ActionCache | ClassCache | undefined;
 		if (!hasContext) {
-			let found = cache.findSymbolByLine(position.line);
+			let found = cache.findSymbolByLine(document.uri.fsPath, position.line);
 			if (found.definitionContainsLine) {
-				symbol = cache.index[found.indexIndex];
-				if (symbol.kind === vscode.SymbolKind.Method) {
-					let action = blCache.actions.get(symbol.name);
-					if (action !== undefined) {
-						if (match !== null && match[1] === wordText) {
-							symbol = action.ruleblocks.get(wordText);
+				let index = cache.index.get(document.uri.fsPath);
+				if (index !== undefined) {
+					symbol = index[found.indexIndex];
+					if (symbol.kind === vscode.SymbolKind.Method) {
+						let action = cache.actions.get(symbol.name);
+						if (action !== undefined) {
+							if (match !== null && match[1] === wordText) {
+								symbol = action.ruleblocks.get(wordText);
+								if (symbol !== undefined) {
+									return symbol;
+								}
+							}
+							symbol = action.parameters.get(wordText) || action.fields.get(wordText);
 							if (symbol !== undefined) {
 								return symbol;
 							}
 						}
-						symbol = action.parameters.get(wordText) || action.fields.get(wordText);
-						if (symbol !== undefined) {
-							return symbol;
-						}
-					}
-				} else if (symbol.kind === vscode.SymbolKind.Interface) {
-					let actionForm = cache.actionForms.get(symbol.name);
-					if (actionForm !== undefined && actionForm.actionName !== undefined) {
-						let action = blCache.actions.get(actionForm.actionName);
-						if (action !== undefined) {
-							symbol = action.parameters.get(wordText) || action.fields.get(wordText);
-							if (symbol !== undefined) {
-								return symbol;
+					} else if (symbol.kind === vscode.SymbolKind.Interface) {
+						let actionForm = cache.actionForms.get(symbol.name);
+						if (actionForm !== undefined && actionForm.actionName !== undefined) {
+							let action = cache.actions.get(actionForm.actionName);
+							if (action !== undefined) {
+								symbol = action.parameters.get(wordText) || action.fields.get(wordText);
+								if (symbol !== undefined) {
+									return symbol;
+								}
 							}
 						}
 					}
@@ -962,7 +1003,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		}
 
 		if (match !== null && match[1] === wordText) {
-			symbol = blCache.ruleblocks.get(wordText);
+			symbol = cache.ruleblocks.get(wordText);
 			if (symbol !== undefined) {
 				return symbol;
 			}
@@ -977,19 +1018,22 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 				}
 			}
 			if (symbol === undefined) {
-				symbol = blCache.actions.get(wordText);
+				symbol = cache.actions.get(wordText);
 			}
 			if (symbol !== undefined) {
 				return symbol;
 			}
 		}
 
-		symbol = blCache.relations.get(wordText);
+		symbol = cache.relations.get(wordText);
 		if (symbol === undefined) {
-			symbol = blCache.fields.get(wordText);
+			symbol = cache.fields.get(wordText);
 		}
 		if (symbol === undefined && !hasContext) {
 			symbol = this.symbolCache.get(wordText);
+		}
+		if (symbol === undefined && !hasContext) {
+			symbol = cache.actions.get(wordText);
 		}
 		return symbol;
 	}

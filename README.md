@@ -28,10 +28,9 @@ Navigate the code using the outline tree or the breadcrumbs bar.
 
 See [change log](CHANGELOG.md) for complete history.
 
-### 0.1.1
-
-- Add simple Go To Definition support
-- Add simple hover text support
+### 0.1.2
+- Added support for Context fields and KeyFields
+- Fixed handling of multiple busclass files for the same business class
 
 -----------------------------------------------------------------------------------------------------------
 

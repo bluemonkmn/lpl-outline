@@ -1,6 +1,13 @@
 # Change Log
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.2] - 2019-04-08
+### Added
+- Support for Context fields and KeyFields
+
+### Fixed
+- Handling of multiple busclass files for the same business class
+
 ## [0.1.1] - 2019-04-03
 ### Added
 - Go To Definition support

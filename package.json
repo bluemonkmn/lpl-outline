@@ -2,7 +2,7 @@
 	"name": "lpl-outline",
 	"displayName": "LPL Outline",
 	"description": "Provide the infromation necessary for LPL code to show nodes in the Outline tree.",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"author": {
 		"email": "ben.marty@infor.com",
 		"name": "Benjamin Marty",

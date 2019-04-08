@@ -23,14 +23,18 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(vscode.languages.registerDefinitionProvider(
 		[
 			{ language: 'busclass', pattern: '**/*.busclass' },
-			{ language: 'busclass', scheme: 'untitled'}
+			{ language: 'busclass', scheme: 'untitled'},
+			{ language: 'keyfield', pattern: '**/*.keyfield' },
+			{ language: 'keyfield', scheme: 'untitled'}
 		]
 	, symbolProvider));
 
 	context.subscriptions.push(vscode.languages.registerHoverProvider(
 		[
 			{ language: 'busclass', pattern: '**/*.busclass' },
-			{ language: 'busclass', scheme: 'untitled'}
+			{ language: 'busclass', scheme: 'untitled'},
+			{ language: 'keyfield', pattern: '**/*.keyfield' },
+			{ language: 'keyfield', scheme: 'untitled'}
 		]
 	, symbolProvider));
 
@@ -51,8 +55,22 @@ export function activate(context: vscode.ExtensionContext) {
 			}));
 		}
 		Promise.all(loader).then((value) => {
-			status.dispose();
-			console.log("Done parsing files");
+			status.text = `$(tasklist) Parsing *.keyfield files...`;
+			console.log(`$(tasklist) Parsing *.keyfield files...`);
+			vscode.workspace.findFiles("**/*.keyfield").then((files) => {
+				loader = [];
+				for(let file of files) {
+					loader.push(SimpleDocument.getSimpleDocument(file).then((doc) => {
+						status.text = `$(tasklist) Parsing ${file.fsPath}`;
+						console.log(`Parsing ${file.fsPath}`);
+						symbolProvider.mergeKeyField(doc);
+					}));
+				}
+				Promise.all(loader).then((value) => {
+					status.dispose();
+					console.log("Done parsing files");	
+				});
+			});
 		});
 	});
 }

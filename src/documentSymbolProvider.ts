@@ -907,7 +907,9 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
         }
 	}
 	
+	// Indexed by document uri.fsPath
 	public parsedCache:Map<string, ClassCache> = new Map();
+	// Indexed by class name
 	private symbolCache:Map<string, ClassCache> = new Map();
 
 	provideDefinition(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.ProviderResult<vscode.Location | vscode.Location[] | vscode.LocationLink[]> {
@@ -923,7 +925,108 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		}
 	}
 
+	mergeKeyField(document: SimpleDocument) {
+		let keyDeclaration = /^\s*(\w+)\s+is\s+a\s+KeyField\s*(\/\/[^\n]*)?$/;
+		let businessClassReference = /^\s+business\s+class\s+is\s+(\w+)\s*(\/\/[^\n]*)?$/;
+		let representationPatterm = /^\s+Representation\s*(\/\/[^\n]*)?$/;
+		let contextField = /^\s+(\w+)\s*(\/\/[^\n]*)?$/;
+		let comment =  /^\s*\/\/[^\n]*$/;
+		let preprocessor = /^\#[^\n]*$/;
+		let Context = /^\s+Context\s*(\/\/[^\n]*)?$/;
+		let className: string | undefined;
+		let fieldName: string | undefined;
+		let fieldLocation: vscode.Location | undefined;
+		let state: LPLBlock = LPLBlock.ClassRoot;
+		let indentInfo: IndentInfo = new IndentInfo(0, LPLBlock.ClassRoot);
+		let representation: string | undefined;
+
+		for(let lineNum=0; lineNum < document.lines.length; lineNum++) {
+			let match: RegExpExecArray | null = null;
+			let line = document.lineAt(lineNum);
+            if (comment.test(line.text) || line.isEmptyOrWhitespace || preprocessor.test(line.text)) {
+                continue;
+			}
+			if (state !== LPLBlock.ClassRoot && line.firstNonWhitespaceCharacterIndex <= indentInfo.headingIndent) {
+				state = LPLBlock.ClassRoot;
+			}
+			if (state === LPLBlock.ClassRoot) {
+				if (fieldName === undefined) {
+					match = keyDeclaration.exec(line.text);
+					if (match) {
+						fieldName = match[1];
+						fieldLocation = new vscode.Location(document.uri, new vscode.Position(lineNum, line.firstNonWhitespaceCharacterIndex));
+					}
+				}
+				if (className === undefined && match === null) {
+					match = businessClassReference.exec(line.text);
+					if (match) {
+						className = match[1];
+					}
+				}
+				if (match === null) {
+					match = Context.exec(line.text);
+					if (match) {
+						state = LPLBlock.PersistentFields;
+						indentInfo.headingIndent = line.firstNonWhitespaceCharacterIndex;
+					}
+				}
+				if (match === null) {
+					match = representationPatterm.exec(line.text);
+					if (match) {
+						state = LPLBlock.OtherSection;
+					}
+				}
+			} else if (state === LPLBlock.PersistentFields) {
+				if (indentInfo.contentIndent === undefined) {
+					indentInfo.contentIndent = line.firstNonWhitespaceCharacterIndex;
+				}
+				if (indentInfo.contentIndent === line.firstNonWhitespaceCharacterIndex) {
+					match = contextField.exec(line.text);
+					if (match) {
+						if (className !== undefined) {
+							let cache = this.symbolCache.get(className);
+							if (cache !== undefined) {
+								cache.fields.set(match[1], new FieldCache(
+									new vscode.SymbolInformation(match[1],
+										vscode.SymbolKind.Field,
+										document.uri.fsPath,
+										new vscode.Location(document.uri, new vscode.Position(lineNum, line.firstNonWhitespaceCharacterIndex))),
+										`Context field ${match[1]}`
+								));
+							}
+						}
+					}
+				}
+			} else if (state === LPLBlock.OtherSection) {
+				state = LPLBlock.ClassRoot;
+				representation = line.text;
+			}
+		}
+
+		if (className && fieldName && fieldLocation) {
+			let cache = this.symbolCache.get(className);
+			if (cache !== undefined) {
+				cache.fields.set(fieldName, new FieldCache(
+					new vscode.SymbolInformation(fieldName,
+						vscode.SymbolKind.Key,
+						document.uri.fsPath,
+						fieldLocation),
+						representation === undefined ? `Key field ${fieldName}` : representation.trimRight()
+				));
+			}
+		}
+	}
+
 	lookupSymbol(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.SymbolInformation | FieldCache | RelationCache | ActionCache | ClassCache | undefined {
+		if (document.uri.fsPath.endsWith(".keyfield")) {
+			let businessClassReference = /^\s+business\s+class\s+is\s+(\w+)\s*(\/\/[^\n]*)?$/;
+			let match = businessClassReference.exec(document.lineAt(position.line).text);
+			if (match) {
+				return this.symbolCache.get(match[1]);
+			}
+			return;
+		}
+
 		let cache = this.cacheSymbols(document, token);
 		let hasContext = false;
 		if (cache === undefined) {
@@ -963,6 +1066,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 
 		let includePattern = /^\s*include\s+(\w+)\s*(\/\/[^\n]*)?$/;
 		let invokePattern = /^\s*invoke\s+(\w+)(\s+(\w+))?\s*(\/\/[^\n]*)?$/;
+        let fieldPattern = /^\s+\w+(\s+is\s+((a|an|like)\s+)?((\w+)(\s+view)?|BusinessObjectReference\s+to\s+(\w+)|Iteration\s+of\s+(\w+)|snapshot\s+of\s+([\w._]+))((\s+size(\s+fixed|\s+up\s+to)?)?\s+\d+(\.\d+)?|(\s+group|\s+compute)(\s+in subject \w+)?)?)?\s*(\/\/[^\n]*)?$/;
 
 		let match = includePattern.exec(document.lineAt(position.line).text);
 		let symbol: vscode.SymbolInformation | FieldCache | RelationCache | ActionCache | ClassCache | undefined;
@@ -1025,7 +1129,14 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 			}
 		}
 
-		symbol = cache.relations.get(wordText);
+		match = fieldPattern.exec(document.lineAt(position.line).text);
+		if (match !== null && (match[5] === wordText || match[7] === wordText || match[8] === wordText || match[9] === wordText)) {
+			// We matched the field *type* part of a field declaration, so don't prefer a field *name* interpretation
+			symbol = this.symbolCache.get(wordText);
+		}
+		if (symbol === undefined) {
+			symbol = cache.relations.get(wordText);
+		}
 		if (symbol === undefined) {
 			symbol = cache.fields.get(wordText);
 		}

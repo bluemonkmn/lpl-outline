@@ -4,9 +4,10 @@
 
 ## Features
 
-Navigate the code using the outline tree or the breadcrumbs bar.
-
+* Navigate the code using the outline tree or the breadcrumbs bar.
 ![Outlining and Breadcrumb](images/lpl-outline.gif)
+* Jump to the definition of actions, classes, relations, parameters, etc.
+* See definitions of fields and paramters, etc., when hovering over them 
 
 > Tip: The breadcrumbs bar is particularly useful in tracking (displaying) your current location within the file too.
 
@@ -22,15 +23,15 @@ Navigate the code using the outline tree or the breadcrumbs bar.
 
 ## Known Issues
 
-* No known issues
+* Code parsing is imperfect, so jump to definition and hover text is not always accurate or available
+* The ability to see a list of all definitions of a parameter or field referenced in the various contexts of a rule block is not implemented (yet).
 
 ## Release Notes
 
 See [change log](CHANGELOG.md) for complete history.
 
-### 0.1.2
-- Added support for Context fields and KeyFields
-- Fixed handling of multiple busclass files for the same business class
+### 0.1.3
+- Added a command to generate an enabled action report (to see what actions are available from what lists).
 
 -----------------------------------------------------------------------------------------------------------
 

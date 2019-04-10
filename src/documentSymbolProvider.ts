@@ -58,6 +58,8 @@ export class ActionCache {
 	public parameters = new Map<string, FieldCache>();
 	public ruleblocks = new Map<string, vscode.SymbolInformation>();
 	public fields = new Map<string, FieldCache>();
+	public isRestricted: boolean = false;
+	public validWhen: string | undefined;
 	constructor(public definition: vscode.SymbolInformation, public hoverText: string) { }
 }
 
@@ -84,6 +86,7 @@ export class ClassCache {
 	public actions = new Map<string, ActionCache>();
 	public actionForms = new Map<string, FormCache>();
 	public definitions: vscode.SymbolInformation[];
+	public listContainers: vscode.Uri[] | undefined;
 	constructor(definition: vscode.SymbolInformation) {
 		this.definitions = [definition];
 	}
@@ -179,6 +182,19 @@ export class ClassCache {
 		for(let [name, value] of cache.index) {
 			this.index.set(name, value);
 		}
+		if (cache.listContainers !== undefined) {
+			if (this.listContainers !== undefined) {
+				for(let listContainer of cache.listContainers) {
+					if (this.listContainers.findIndex((l) => {
+						return l.fsPath === listContainer.fsPath;
+					}) < 0) {
+						this.listContainers.push(listContainer);
+					}
+				}
+			} else {
+				this.listContainers = cache.listContainers;
+			}
+		}
 	}
 }
 
@@ -273,7 +289,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
         let classNamePattern = /^\s*(\w+)\s+is\s+a\s+BusinessClass\s*$/;
         let className: string = '';
         let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions|Field Rules|Local Fields|Transient Fields|Field Groups|Rule Blocks|Sets|Apply Pending Effective Rules|Audit Entry Rules|Commit Rules|Create Exit Rules|Delete Rules|Attach Rules|Action Exit Rules|Ontology|Patterns|Context Fields|Translation Field Rules|Form Invokes)\s*(\/\/[^\n]*)?$/;
-        let actionHeadingPattern = /^(\s+)(Queue Mapping Fields|Set Is|Parameters|Parameter Rules|Local Fields|Results|Field Rules|SubType|Accumulators|Instance Selection|Sort Order(\s+is\s+\w+)|Action Rules|Entrance Rules|Exit Rules|InitiateRequest Rules|UpdateRequest Rules|CancelRequest Rules|Rollback Rules|Rule Blocks)\s*(\/\/[^\n]*)?$/;
+        let actionHeadingPattern = /^(\s+)(Queue Mapping Fields|Set Is|Parameters|Parameter Rules|Local Fields|Results|Field Rules|SubType|Accumulators|Instance Selection|Sort Order(\s+is\s+\w+)|Action Rules|Entrance Rules|Exit Rules|InitiateRequest Rules|UpdateRequest Rules|CancelRequest Rules|Rollback Rules|Rule Blocks|restricted|valid\s+when\s*\(([^)]+)\))\s*(\/\/[^\n]*)?$/;
         let comment =  /^\s*\/\/[^\n]*$/;
         let preprocessor = /^\#[^\n]*$/;
         let actionPattern = /^\s+(\w+)\s+is\s+(a|an)\s+((\w+)\s+)?(Request)?Action\s*(\/\/[^\n]*)?$/;
@@ -409,6 +425,15 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 									currentBlock.cache = classInfo;
 									currentBlock.formInfo = formInfo;
 								}
+								if (currentBlock.blockType === LPLBlock.List && classInfo !== undefined) {
+									if (classInfo.listContainers === undefined) {
+										classInfo.listContainers = [document.uri];
+									} else if (classInfo.listContainers.findIndex((l) => {
+										return l.fsPath === document.uri.fsPath;
+									}) < 0) {
+										classInfo.listContainers.push(document.uri);
+									}
+								}
                             }    
                         }
                         break;
@@ -468,7 +493,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                         if (match !== null) {
                             if (currentBlock.contentIndent === undefined) {
                                 currentBlock.contentIndent = indent;
-                            }
+							}
                             indentInfo.push(currentBlock);
                             currentBlock = new IndentInfo(indent, LPLBlock.Action);
                             currentBlock.symbolInformation = new vscode.SymbolInformation(
@@ -621,33 +646,36 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                     case LPLBlock.Action:
                         match = actionHeadingPattern.exec(line.text);
                         if (match !== null) {
-                            if (currentBlock.contentIndent === undefined) {
-                                currentBlock.contentIndent = indent;
-							}
                             currentBlock.contentIndent = indent;
-                            indentInfo.push(currentBlock);
-                            if (match[2] === "Parameters") {
-                                currentBlock = new IndentInfo(indent, LPLBlock.ActionParameters);
-                            } else if (match[2] === "Parameter Rules") {
-                                currentBlock = new IndentInfo(indent, LPLBlock.ActionParameterRules);
-                            } else if (match[2] === "Local Fields") {
-                                currentBlock = new IndentInfo(indent, LPLBlock.ActionLocalFields);
-                            } else if (match[2] === "Field Rules") {
-                                currentBlock = new IndentInfo(indent, LPLBlock.ActionLocalFieldRules);
-                            } else if (match[2] === "Rule Blocks") {
-                                currentBlock = new IndentInfo(indent, LPLBlock.ActionRuleBlocks);
-                            } else {
-                                currentBlock = new IndentInfo(indent, LPLBlock.ActionOtherSection);
-                            }
-                            currentBlock.symbolInformation = new vscode.SymbolInformation(
-                                match[2],
-                                vscode.SymbolKind.Namespace,
-                                className,
-                                new vscode.Location(
-                                    document.uri,
-                                    new vscode.Position(lineNum, 0)
-                                )
-                            );
+							if (match[2] === "restricted" && actionInfo !== undefined) {
+								actionInfo.isRestricted = true;
+							} else if (match[4] && actionInfo !== undefined) {
+								actionInfo.validWhen = match[4];
+							} else {
+								indentInfo.push(currentBlock);
+								if (match[2] === "Parameters") {
+									currentBlock = new IndentInfo(indent, LPLBlock.ActionParameters);
+								} else if (match[2] === "Parameter Rules") {
+									currentBlock = new IndentInfo(indent, LPLBlock.ActionParameterRules);
+								} else if (match[2] === "Local Fields") {
+									currentBlock = new IndentInfo(indent, LPLBlock.ActionLocalFields);
+								} else if (match[2] === "Field Rules") {
+									currentBlock = new IndentInfo(indent, LPLBlock.ActionLocalFieldRules);
+								} else if (match[2] === "Rule Blocks") {
+									currentBlock = new IndentInfo(indent, LPLBlock.ActionRuleBlocks);
+								} else {
+									currentBlock = new IndentInfo(indent, LPLBlock.ActionOtherSection);
+								}
+								currentBlock.symbolInformation = new vscode.SymbolInformation(
+									match[2],
+									vscode.SymbolKind.Namespace,
+									className,
+									new vscode.Location(
+										document.uri,
+										new vscode.Position(lineNum, 0)
+									)
+								);
+							}
                         }
                         break;
                     case LPLBlock.ActionParameters:
@@ -940,7 +968,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		let indentInfo: IndentInfo = new IndentInfo(0, LPLBlock.ClassRoot);
 		let representation: string | undefined;
 
-		for(let lineNum=0; lineNum < document.lines.length; lineNum++) {
+		for(let lineNum=0; lineNum < document.lineCount; lineNum++) {
 			let match: RegExpExecArray | null = null;
 			let line = document.lineAt(lineNum);
             if (comment.test(line.text) || line.isEmptyOrWhitespace || preprocessor.test(line.text)) {
@@ -1155,6 +1183,136 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 			if (symbol.hoverText !== undefined) {
 				return new vscode.Hover(symbol.hoverText);
 			}
+		}
+	}
+
+	async generateEnabledActionReport(document: vscode.TextDocument, channel: vscode.OutputChannel) {
+		let thisClass = this.parsedCache.get(document.uri.fsPath);
+		if (thisClass === undefined) {
+			channel.appendLine(`${document.uri.fsPath} is not cached.`);
+			return;
+		}
+
+		if (thisClass.listContainers === undefined) {
+			channel.appendLine(`${document.uri.fsPath} does not have any lists.`);
+			return;
+		}
+
+		let restrictableOnPattern = /^\s+(\w+)(\s+is\s+(a|an)\s+((\w+\s+)?List))\s*(\/\/[^\n]*)?$/;
+		//let restrictableOnPattern = /^\s+(\w+)(\s+is\s+(a|an)\s+((\w+\s+)?List|CompositeForm))\s*(\/\/[^\n]*)?$/;
+		let restrictPattern = /^\s+restrict\s+action\s+(\w+)\s*(\/\/[^\n]*)?$/;
+		let comment =  /^\s*\/\/[^\n]*$/;
+		let preprocessor = /^\#[^\n]*$/;
+		let actionIndex = new Map<string, number>();
+		let listIndex = new Map<string, number>();
+		let actionMatrix: string[][] = [];
+		let listNames: string[] = [];
+		let actions: ActionCache[] = [];
+		let actionIndexNumber: number | undefined;
+		let listCount = 0;
+		let listInheritance = new Map<string, string[]>();
+		for (let [actionName,actionCache] of thisClass.actions) {
+			actionIndex.set(actionName, actions.length);
+			actions.push(actionCache);
+		}
+		for (let listContainer of thisClass.listContainers) {
+			let uiCode = await SimpleDocument.getSimpleDocument(listContainer);
+			let state = LPLBlock.ClassRoot;
+			let parentIndent = 0;
+			for (let lineNum = 0; lineNum < uiCode.lineCount; lineNum++) {
+				let line = uiCode.lineAt(lineNum);
+				if (comment.test(line.text) || line.isEmptyOrWhitespace || preprocessor.test(line.text)) {
+					continue;
+				}
+				let match: RegExpExecArray | null;
+				if (state !== LPLBlock.ClassRoot && line.firstNonWhitespaceCharacterIndex <= parentIndent) {
+					state = LPLBlock.ClassRoot;
+					parentIndent = 0;
+				}
+				if (state === LPLBlock.ClassRoot) {
+					match = restrictableOnPattern.exec(line.text);
+					if (match) {
+						state = LPLBlock.List;
+						parentIndent = line.firstNonWhitespaceCharacterIndex;
+						let baseListName = match[5];
+						if (baseListName === undefined || baseListName === null || baseListName.length === 0) {
+							baseListName = "root";
+						} else {
+							baseListName = baseListName.trim();
+						}
+						let entry = listInheritance.get(baseListName);
+						if (entry === undefined) {
+							entry = [match[1]];
+							listInheritance.set(baseListName, entry);
+						} else {
+							entry.push(match[1]);
+						}
+						actionMatrix[listCount++] = [];
+						listIndex.set(match[1], listCount-1);
+						for (let index=0; index < actions.length; index++) {
+							actionMatrix[listCount-1][index] = actions[index].isRestricted ? ""
+								: (actions[index].validWhen !== undefined ? "V" : "X");
+						}
+						listNames.push(match[1]);
+					}
+				} else if (state === LPLBlock.List) {				
+					match = restrictPattern.exec(line.text);
+					if (match) {
+						actionIndexNumber = actionIndex.get(match[1]);
+						if (actionIndexNumber !== undefined) {
+							actionMatrix[listCount-1][actionIndexNumber] = actions[actionIndexNumber].isRestricted ? "R" : "";
+						} else {
+							channel.appendLine(`Failed to map action name ${match[1]}`);
+						}
+					}
+				}
+			}
+		}
+
+		let base = "root";
+		let derivedList = listInheritance.get(base);
+		let applyInheritance = (base: string, derived: string) => {
+			if (base !== "root") {
+				let derivedIndex = listIndex.get(derived);
+				let baseIndex = listIndex.get(base);
+				if (derivedIndex !== undefined && baseIndex !== undefined) {
+					for (let action = 0; action < actions.length; action++) {
+						if (!actions[action].isRestricted) {
+							if (actionMatrix[baseIndex][action] === "") {
+								if (actionMatrix[derivedIndex][action] === "X") {
+									actionMatrix[derivedIndex][action] = "";
+								}
+							}
+						}
+					}
+				}
+			}
+			let nextLevel = listInheritance.get(derived);
+			if (nextLevel !== undefined) {
+				for(let next of nextLevel) {
+					applyInheritance(derived, next);
+				}
+			}
+		};
+		if (derivedList !== undefined) {
+			for(let derived of derivedList) {
+				applyInheritance(base, derived);
+			}
+		}
+		channel.append("ActionName,IsRestricted,ValidWhen");
+		for (let listIndex = 0; listIndex < listNames.length; listIndex++) {
+			channel.append(`,${listNames[listIndex]}`);
+		}
+
+		channel.appendLine("");
+
+		for(actionIndexNumber = 0; actionIndexNumber < actions.length; actionIndexNumber++) {
+			let action = actions[actionIndexNumber];
+			channel.append(`${action.definition.name},${action.isRestricted?"X":""},${action.validWhen?action.validWhen:""}`);
+			for(let listIndex = 0; listIndex < listNames.length; listIndex++) {
+				channel.append(`,${actionMatrix[listIndex][actionIndexNumber]}`);
+			}
+			channel.appendLine("");
 		}
 	}
 }

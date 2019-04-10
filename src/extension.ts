@@ -12,6 +12,8 @@ export function activate(context: vscode.ExtensionContext) {
 	// This line of code will only be executed once when your extension is activated
 		console.log('LPL Outline extension is now active.');
 
+	let channel = vscode.window.createOutputChannel("LPL Log");
+
 	let symbolProvider = new BusinessClassDocumentSymbolProvider();
 	context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(
 		[
@@ -37,6 +39,13 @@ export function activate(context: vscode.ExtensionContext) {
 			{ language: 'keyfield', scheme: 'untitled'}
 		]
 	, symbolProvider));
+
+	context.subscriptions.push(vscode.commands.registerCommand('lpl.enabledActionsReport', () => {
+		let te = vscode.window.activeTextEditor;
+		if (te !== undefined) {
+			symbolProvider.generateEnabledActionReport(te.document, channel);
+		}
+	}));
 
 	let status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
 	status.text = "$(tasklist) Parsing *.busclass files...";

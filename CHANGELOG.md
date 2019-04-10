@@ -1,6 +1,11 @@
 # Change Log
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.3] - 2019-04-10
+### Added
+- Enabled Actions Report command
+- LPL Log output channel (to which report is gernerated)
+
 ## [0.1.2] - 2019-04-08
 ### Added
 - Support for Context fields and KeyFields

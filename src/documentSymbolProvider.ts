@@ -1141,6 +1141,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 			}
 		}
 
+		symbol = undefined;
 		match = invokePattern.exec(document.lineAt(position.line).text);
 		if (match !== null && match[1] === wordText) {
 			if (match[3]) {

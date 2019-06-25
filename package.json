@@ -2,7 +2,7 @@
 	"name": "lpl-outline",
 	"displayName": "LPL Outline",
 	"description": "Provide the infromation necessary for LPL code to show nodes in the Outline tree.",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"author": {
 		"email": "ben.marty@infor.com",
 		"name": "Benjamin Marty",
@@ -20,7 +20,8 @@
 		"url": "https://github.com/bluemonkmn/lpl-outline.git"
 	},
 	"activationEvents": [
-		"onLanguage:busclass"
+		"onLanguage:busclass",
+		"onLanguage:keyfield"
 	],
 	"main": "./out/extension.js",
 	"contributes": {

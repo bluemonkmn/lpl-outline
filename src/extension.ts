@@ -14,11 +14,16 @@ export function activate(context: vscode.ExtensionContext) {
 
 	let channel = vscode.window.createOutputChannel("LPL Log");
 
+	let diagnostics = vscode.languages.createDiagnosticCollection("lpl");
+
 	let symbolProvider = new BusinessClassDocumentSymbolProvider();
+	symbolProvider.diagnostics = diagnostics;
 	context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(
 		[
 			{ language: 'busclass', pattern: '**/*.busclass' },
-			{ language: 'busclass', scheme: 'untitled'}
+			{ language: 'busclass', scheme: 'untitled'},
+			{ language: 'keyfield', pattern: '**/*.keyfield' },
+			{ language: 'keyfield', scheme: 'untitled' }
 		],
 		symbolProvider));
 
@@ -72,10 +77,12 @@ export function activate(context: vscode.ExtensionContext) {
 					loader.push(SimpleDocument.getSimpleDocument(file).then((doc) => {
 						status.text = `$(tasklist) Parsing ${file.fsPath}`;
 						console.log(`Parsing ${file.fsPath}`);
-						symbolProvider.mergeKeyField(doc);
+						symbolProvider.cacheKeyField(doc);
 					}));
 				}
 				Promise.all(loader).then((value) => {
+					status.text = "Validating Import Fields...";
+					symbolProvider.checkImportClasses(channel);
 					status.dispose();
 					console.log("Done parsing files");	
 				});

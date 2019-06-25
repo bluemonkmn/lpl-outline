@@ -1,6 +1,15 @@
 # Change Log
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.4] - 2019-06-25
+### Added
+- Diagnostics to show persistent fields missing from imports
+
+### Fixed
+- Parsing of keyfield files is now done similarly to busclass files rather than waiting for a busclass file to become active and running as a side-effect.
+- All fields were being treated as persistent fields; corrected to separate them into persistent, local and transient.
+- To the extent that they are used in diagnostic underlining, field and action name locations are now properly represented instead of simply using the beginning of the line on which they occur.
+
 ## [0.1.3] - 2019-04-11
 ### Added
 - Enabled Actions Report command

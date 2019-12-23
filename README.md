@@ -32,12 +32,8 @@
 
 See [change log](CHANGELOG.md) for complete history.
 
-### 0.1.4 - 2019-06-25
-- Added diagnostics to show persistent fields missing from imports.
-- Parsing of keyfield files is now done similarly to busclass files rather than waiting for a busclass file to become active and running as a side-effect.
-- All fields were being treated as persistent fields; corrected to separate them into persistent, local and transient.
-- To the extent that they are used in diagnostic underlining, field and action name locations are now properly represented instead of simply using the beginning of the line on which they occur.
-
+### 0.1.5 - 2019-12-23
+- Added support for parsing StatyeCycles block and the Cycles, States and actions contained therein.
 -----------------------------------------------------------------------------------------------------------
 
 ## Repository

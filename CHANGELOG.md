@@ -1,6 +1,10 @@
 # Change Log
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.5] - 2019-12-23
+### Added
+- Support for parsing StateCycles block and the Cycles, States and actions contained therein.
+
 ## [0.1.4] - 2019-06-25
 ### Added
 - Diagnostics to show persistent fields missing from imports

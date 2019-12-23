@@ -33,7 +33,10 @@ enum LPLBlock {
     ActionLocalField,
     ActionParameterRule,
     ActionLocalFieldRule,
-    ActionRuleBlock,
+	ActionRuleBlock,
+	StateCycles,
+	StateCycle,
+	State,
     List,
     CardView,
     Form,
@@ -314,7 +317,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		let formInfo: FormCache | undefined;
         let classNamePattern = /^\s*(\w+)\s+is\s+a\s+BusinessClass\s*$/;
         let className: string = '';
-        let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions|Field Rules|Local Fields|Transient Fields|Field Groups|Rule Blocks|Sets|Apply Pending Effective Rules|Audit Entry Rules|Commit Rules|Create Exit Rules|Delete Rules|Attach Rules|Action Exit Rules|Ontology|Patterns|Context Fields|Translation Field Rules|Form Invokes)\s*(\/\/[^\n]*)?$/;
+        let headingPattern = /^(\s+)(Persistent Fields|Conditions|Derived Fields|Relations|Actions|Field Rules|Local Fields|Transient Fields|Field Groups|Rule Blocks|Sets|Apply Pending Effective Rules|Audit Entry Rules|Commit Rules|Create Exit Rules|Delete Rules|Attach Rules|Action Exit Rules|Ontology|Patterns|Context Fields|Translation Field Rules|Form Invokes|StateCycles)\s*(\/\/[^\n]*)?$/;
         let actionHeadingPattern = /^(\s+)(Queue Mapping Fields|Set Is|Parameters|Parameter Rules|Local Fields|Results|Field Rules|SubType|Accumulators|Instance Selection|Sort Order(\s+is\s+\w+)|Action Rules|Entrance Rules|Exit Rules|InitiateRequest Rules|UpdateRequest Rules|CancelRequest Rules|Rollback Rules|Rule Blocks|restricted|valid\s+when\s*\(([^)]+)\))\s*(\/\/[^\n]*)?$/;
         let comment =  /^\s*\/\/[^\n]*$/;
         let preprocessor = /^\#[^\n]*$/;
@@ -327,6 +330,8 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
         let simpleNamePattern = /^\s+(\w+)\s*(\/\/[^\n]*)?$/;
 		let fullFieldName = /^\s+([\w_.]+|bod id|(create|update) stamp(\.actor)?|relevance score|(authenticated|agent)\s*actor[\w_.]*|action comment|action type[\w_.]*|action tag|applied stamp|audit entry id|audit period[\w._]*|correction comment|effective date|effective time zone|effective through|entry stamp|initiating action|invoking action|reason code|system stamp|action request id|changed field names|changed fields|purge date|audit transaction id|server identity|remote identity|current async action request id|current action background group id|has future changes|user fields\s*(\(\w+\))?)\s*(\/\/[^\n]*)?$/;
 		let dataLoadSingleInvoke = /^\s+invoke\s+(Create|Import)\s+(\w+)\s*(\/\/[^\n]*)?$/;
+		let stateCycle = /^\s+(\w+)\s+is\s+a\s+StateCycle\s*(\/\/[^\n]*)?$/;
+		let stateCycleState = /^\s+(\w+)\s+is\s+a\s+State\s*(\/\/[^\n]*)?$/;
         
         let uiHeadingPattern = /^\s+(\w+)?(Context Message Invocations|Drill List|\s+is\s+(a|an)\s+((\w+)\s+Message|Navigation|CardView|(\w+\s+)?List|AuditList|DrillList|InstanceCountChart|Form|ActionForm|CompositeForm|WizardForm|MatrixForm|SearchForm|SummaryForm))\s*(\/\/[^\n]*)?$/;
         let uiSubsectionPattern = /^\s+(Display Fields|Actions|Instance Selection|Layout|(\w+)\s+is\s+a\s+(Panel|MultiListPanel)|Detail Sections)\s*(\/\/[^\n]*)?$/;
@@ -435,7 +440,9 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                                 } else if (match[4] === "Navigation" ||
                                     match[4] === "Message") {
                                     symbolKind = vscode.SymbolKind.Class;
-                                    currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
+									currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
+								} else if (match[2] === "StateCycles") {
+									currentBlock = new IndentInfo(indent, LPLBlock.StateCycles);
                                 } else {
                                     currentBlock = new IndentInfo(indent, LPLBlock.OtherSection);
                                 }
@@ -524,6 +531,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 						}
                         break;
                     case LPLBlock.Actions:
+					case LPLBlock.State:
                         match = actionPattern.exec(line.text);
                         if (match !== null) {
                             if (currentBlock.contentIndent === undefined) {
@@ -896,7 +904,39 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
                             currentBlock.contentIndent = indent;
                         }
                         break;
-                    default:
+					case LPLBlock.StateCycles:
+						match = stateCycle.exec(line.text);
+						if (match !== null) {
+							if (currentBlock.contentIndent === undefined) {
+								currentBlock.contentIndent = indent;
+							}
+							indentInfo.push(currentBlock);
+							currentBlock = new IndentInfo(indent, LPLBlock.StateCycle);
+							currentBlock.symbolInformation = new vscode.SymbolInformation(
+								match[1],
+								vscode.SymbolKind.Enum,
+								className,
+								new vscode.Location(document.uri,
+									new vscode.Position(lineNum, 0)));
+						}
+						break;
+					case LPLBlock.StateCycle:
+						match = stateCycleState.exec(line.text);
+						if (match !== null) {
+							if (currentBlock.contentIndent === undefined) {
+								currentBlock.contentIndent = indent;
+							}
+							indentInfo.push(currentBlock);
+							currentBlock = new IndentInfo(indent, LPLBlock.State);
+							currentBlock.symbolInformation = new vscode.SymbolInformation(
+								match[1],
+								vscode.SymbolKind.EnumMember,
+								className,
+								new vscode.Location(document.uri,
+									new vscode.Position(lineNum, 0)));
+						}
+						break;
+					default:
                         console.log("Unhandled block type: " + currentBlock.blockType);
                         break;
                 }

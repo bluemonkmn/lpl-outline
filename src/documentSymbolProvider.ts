@@ -1158,6 +1158,32 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 		return undefined;
 	}
 
+	public getOtherFile(document: vscode.TextDocument): vscode.Uri | undefined {
+		let thisClass = this.parsedCache.get(document.fileName);
+		if (thisClass !== undefined) {
+			let classDefinition = this.symbolCache.get(thisClass.definitions[0].name)
+			let otherFilePath : string | undefined = document.uri.fsPath.replace(/\\ui\\([^\\]+\.busclass)$/, "\\bl\\$1");
+			if (otherFilePath == document.uri.fsPath)
+				otherFilePath = document.uri.fsPath.replace(/\\bl\\([^\\]+\.busclass)$/, "\\ui\\$1");
+			if (otherFilePath == document.uri.fsPath)
+				otherFilePath = undefined;
+			if (classDefinition !== undefined) {
+				let busclass = /\\(ui|bl)\\[^\\.]+\.busclass$/;
+				for (let def of classDefinition.definitions) {
+					if (otherFilePath !== undefined) {
+						if (def.location.uri.fsPath == otherFilePath)
+							return def.location.uri;
+					} else {
+						if ((def.location.uri !== document.uri)
+						&& (busclass.test(def.location.uri.fsPath))) {
+							return def.location.uri;
+						}
+					}
+				}
+			}
+		}
+	}
+
 	lookupSymbol(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.SymbolInformation | FieldCache | RelationCache | ActionCache | ClassCache | undefined {
 		if (document.uri.fsPath.endsWith(".keyfield")) {
 			let businessClassReference = /^\s+business\s+class\s+is\s+(\w+)\s*(\/\/[^\n]*)?$/;

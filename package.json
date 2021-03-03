@@ -2,7 +2,7 @@
 	"name": "lpl-outline",
 	"displayName": "LPL Outline",
 	"description": "Provide the infromation necessary for LPL code to show nodes in the Outline tree.",
-	"version": "0.1.5",
+	"version": "0.1.6",
 	"author": {
 		"email": "ben.marty@infor.com",
 		"name": "Benjamin Marty",
@@ -44,6 +44,18 @@
 				"command": "lpl.enabledActionsReport",
 				"category": "LPL",
 				"title": "Enabled Actions Report"
+			},
+			{
+				"command": "lpl.toggleBlUi",
+				"category": "LPL",
+				"title": "Toggle BL/UI code"
+			}
+		],
+		"keybindings": [
+			{
+			  "command": "lpl.toggleBlUi",
+			  "key": "ctrl+alt+g",
+			  "when": "editorTextFocus"
 			}
 		]
 	},

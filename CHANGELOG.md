@@ -1,6 +1,10 @@
 # Change Log
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.6] - 2021-03-03
+### Added
+- Added ability to jump between UI and BL files using Ctrl-Alt-G by default.
+
 ## [0.1.5] - 2019-12-23
 ### Added
 - Support for parsing StateCycles block and the Cycles, States and actions contained therein.

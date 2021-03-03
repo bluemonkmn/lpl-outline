@@ -32,8 +32,9 @@
 
 See [change log](CHANGELOG.md) for complete history.
 
-### 0.1.5 - 2019-12-23
-- Added support for parsing StatyeCycles block and the Cycles, States and actions contained therein.
+### 0.1.6 - 2021-03-03
+- Added ability to jump between UI and BL files using Ctrl-Alt-G by default.
+
 -----------------------------------------------------------------------------------------------------------
 
 ## Repository

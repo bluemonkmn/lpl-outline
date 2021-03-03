@@ -52,6 +52,16 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}));
 
+	context.subscriptions.push(vscode.commands.registerCommand('lpl.toggleBlUi', () => {
+		let te = vscode.window.activeTextEditor;
+		if (te !== undefined) {
+			let otherFile = symbolProvider.getOtherFile(te.document);
+			if (otherFile !== undefined) {
+				vscode.commands.executeCommand('vscode.open', otherFile);
+			}
+		}
+	}))
+
 	let status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
 	status.text = "$(tasklist) Parsing *.busclass files...";
 	status.show();

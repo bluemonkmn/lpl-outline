@@ -1,6 +1,10 @@
 # Change Log
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.7] - 2021-03-08
+### Fixed
+- Ability to jump between UI and BL files corrected, for example, to jump from bl\A.B.busclass to ui\A.busclass even if ui\A.B.busclass doesn't exist.
+
 ## [0.1.6] - 2021-03-03
 ### Added
 - Added ability to jump between UI and BL files using Ctrl-Alt-G by default.

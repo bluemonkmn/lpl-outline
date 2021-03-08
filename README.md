@@ -35,6 +35,9 @@ See [change log](CHANGELOG.md) for complete history.
 ### 0.1.6 - 2021-03-03
 - Added ability to jump between UI and BL files using Ctrl-Alt-G by default.
 
+### 0.1.7 - 2021-03-08
+- Fixed ability to jump between UI and BL files, for example, to jump from bl\A.B.busclass to ui\A.busclass even if ui\A.B.busclass doesn't exist.
+
 -----------------------------------------------------------------------------------------------------------
 
 ## Repository

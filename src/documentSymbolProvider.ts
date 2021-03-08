@@ -1165,7 +1165,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
 			let otherFilePath : string | undefined = document.uri.fsPath.replace(/\\ui\\([^\\]+\.busclass)$/, "\\bl\\$1");
 			if (otherFilePath == document.uri.fsPath)
 				otherFilePath = document.uri.fsPath.replace(/\\bl\\([^\\]+\.busclass)$/, "\\ui\\$1");
-			if (otherFilePath == document.uri.fsPath)
+			if ((otherFilePath == document.uri.fsPath) || !this.parsedCache.has(otherFilePath))
 				otherFilePath = undefined;
 			if (classDefinition !== undefined) {
 				let busclass = /\\(ui|bl)\\[^\\.]+\.busclass$/;

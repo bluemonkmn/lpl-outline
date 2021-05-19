@@ -1,6 +1,16 @@
 # Change Log
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.8] - 2021-05-19
+### Added
+- Key fields are now reported as missing from import classes if they are not listed and @Import=Exclude is not specified on the .keyfield line 1.
+- Relative keys are now identified as fields and can report warnings if missing from imports and not marked with @Import=Exclude.
+
+### Fixed
+- Declarations of the form "Field is Alpha up to 20" are now parsed properly.
+- Warning messages about missing import fields will exclude entire import business classes with @Import=Exclude on line 1.
+- Associating an Import class to the corresponding main business class will now also look for "include FillInFields" to identify an invoke referring to the main business class.
+
 ## [0.1.7] - 2021-03-08
 ### Fixed
 - Ability to jump between UI and BL files corrected, for example, to jump from bl\A.B.busclass to ui\A.busclass even if ui\A.B.busclass doesn't exist.

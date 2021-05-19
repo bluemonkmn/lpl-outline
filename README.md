@@ -32,11 +32,12 @@
 
 See [change log](CHANGELOG.md) for complete history.
 
-### 0.1.6 - 2021-03-03
-- Added ability to jump between UI and BL files using Ctrl-Alt-G by default.
-
-### 0.1.7 - 2021-03-08
-- Fixed ability to jump between UI and BL files, for example, to jump from bl\A.B.busclass to ui\A.busclass even if ui\A.B.busclass doesn't exist.
+### 0.1.8 - 2021-05-19
+- Key fields are now reported as missing from import classes if they are not listed and @Import=Exclude is not specified on the .keyfield line 1.
+- Declarations of the form "Field is Alpha up to 20" are now parsed properly.
+- Warning messages about missing import fields will exclude entire import business classes with @Import=Exclude on line 1.
+- Associating an Import class to the corresponding main business class will now also look for "include FillInFields" to identify an invoke referring to the main business class.
+- Relative keys are now identified as fields and can report warnings if missing from imports and not marked with @Import=Exclude.
 
 -----------------------------------------------------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { isNumber } from 'util';
+
 import { readFile } from 'fs';
 
 enum LPLBlock {
@@ -114,7 +114,7 @@ export class ClassCache {
 			index.splice(location.indexIndex, 0, symbol);
 		}
 	}
-	public findSymbolByLine(fsPath: string, line: Number): {indexIndex: number; definitionContainsLine: boolean} {
+	public findSymbolByLine(fsPath: string, line: number): {indexIndex: number; definitionContainsLine: boolean} {
 		let index = this.index.get(fsPath);
 		if (index === undefined) {
 			return {indexIndex: 0, definitionContainsLine: false};
@@ -1057,7 +1057,7 @@ export class BusinessClassDocumentSymbolProvider implements vscode.DocumentSymbo
             return 0;
         }
 
-        let tabSize = isNumber(editor.options.tabSize) ? editor.options.tabSize : 4;
+        let tabSize = typeof editor.options.tabSize === 'number' ? editor.options.tabSize : 4;
         let width = 0;
 
         for (let charIndex = 0; (charIndex < end) && charIndex < line.length; charIndex++) {
